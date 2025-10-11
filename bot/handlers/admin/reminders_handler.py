@@ -11,17 +11,12 @@ from telegram.ext import (
 )
 import io
 
-# --- شرح ---
-# هذا الملف الجديد بالكامل مخصص لإدارة وحدة "التذكيرات" من لوحة تحكم المدير
-
-# استيراد وظائف قاعدة البيانات التي سننشئها
 from bot.database.manager import (
     add_reminder,
     get_all_reminders,
     delete_reminder,
 )
 
-# تعريف состояний (states) للمحادثة لإضافة التذكيرات
 (
     AWAIT_REMINDER_TEXT,
     AWAIT_REMINDER_FILE,
@@ -68,7 +63,7 @@ async def save_reminder_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await show_reminders_panel_after_action(update, context)
     return ConversationHandler.END
 
-# ---- 3. عرض وحذف التذكيرات ----
+# ---- 3. عرض وحذف التذكيرات (هنا تم التعديل) ----
 
 async def view_all_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """يعرض كل التذكيرات المحفوظة مع زر حذف بجانب كل واحد."""
@@ -76,8 +71,13 @@ async def view_all_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
 
     all_reminders = get_all_reminders()
+    
+    # --- تعديل 1: إضافة زر "إضافة أول تذكير" إذا كانت القائمة فارغة ---
     if not all_reminders:
-        keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data='reminders_panel_from_view')]]
+        keyboard = [
+            [InlineKeyboardButton("➕ إضافة أول تذكير", callback_data='add_new_reminder')],
+            [InlineKeyboardButton("🔙 رجوع", callback_data='reminders_panel_from_view')]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text="لا توجد أي تذكيرات محفوظة حالياً.", reply_markup=reply_markup)
         return
@@ -92,7 +92,12 @@ async def view_all_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         keyboard.append([text_button, delete_button])
 
-    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data='reminders_panel_from_view')])
+    # --- تعديل 2: إضافة زر "إضافة المزيد" بجانب زر الرجوع ---
+    bottom_row = [
+        InlineKeyboardButton("🔙 رجوع", callback_data='reminders_panel_from_view'),
+        InlineKeyboardButton("➕ إضافة المزيد", callback_data='add_new_reminder')
+    ]
+    keyboard.append(bottom_row)
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text="قائمة التذكيرات المحفوظة:", reply_markup=reply_markup)
@@ -105,7 +110,9 @@ async def confirm_delete_reminder(update: Update, context: ContextTypes.DEFAULT_
     
     if delete_reminder(reminder_id):
         await query.answer("🗑️ تم الحذف بنجاح!", show_alert=True)
-        await view_all_reminders(update, context) # تحديث القائمة
+        # بعد الحذف، أعد عرض القائمة المحدثة
+        # هذا سيضمن ظهور الأزرار الجديدة حتى بعد الحذف
+        await view_all_reminders(update, context)
     else:
         await query.answer("❌ فشلت عملية الحذف.", show_alert=True)
 
