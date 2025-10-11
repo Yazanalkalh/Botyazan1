@@ -1,90 +1,98 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update
-from telegram.ext import ContextTypes, CallbackQueryHandler
-from datetime import datetime
-import pytz
-from hijri_converter import Gregorian
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.constants import ChatMemberStatus
 
-# استيراد وظائف قاعدة البيانات
-from bot.database.manager import get_random_reminder, get_setting
+# استيراد وظيفة تسجيل المستخدم
+from bot.database.manager import get_all_subscription_channels, get_setting, add_or_update_user
 
-# --- 1. قواميس الترجمة إلى العربية ---
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_id = update.effective_user.id
+    required_channels = get_all_subscription_channels()
+    
+    if not required_channels:
+        return True
 
-ARABIC_WEEKDAYS = {
-    "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين",
-    "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس",
-    "Friday": "الجمعة",
-}
+    unsubscribed_channels = []
+    for channel in required_channels:
+        channel_username = channel['username']
+        try:
+            member = await context.bot.get_chat_member(chat_id=channel_username, user_id=user_id)
+            if member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.KICKED]:
+                unsubscribed_channels.append(channel_username)
+        except Exception:
+            unsubscribed_channels.append(channel_username)
+            continue
+            
+    if unsubscribed_channels:
+        keyboard = []
+        text = "عذراً، يجب عليك الاشتراك في القنوات التالية أولاً لاستخدام البوت:\n\n"
+        for i, ch in enumerate(unsubscribed_channels, 1):
+            text += f"{i}- {ch}\n"
+            keyboard.append([InlineKeyboardButton(f"الانضمام إلى {ch}", url=f"https://t.me/{ch.replace('@', '')}")])
+        
+        keyboard.append([InlineKeyboardButton("🔄 لقد اشتركت، تحقق الآن", callback_data="check_subscription_again")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup)
+        return False
 
-ARABIC_HIJRI_MONTHS = {
-    1: "محرم", 2: "صفر", 3: "ربيع الأول", 4: "ربيع الآخر", 5: "جمادى الأولى",
-    6: "جمادى الآخرة", 7: "رجب", 8: "شعبان", 9: "رمضان", 10: "شوال",
-    11: "ذو القعدة", 12: "ذو الحجة",
-}
+    return True
 
-# --- 2. وظائف الأزرار ---
-
-async def show_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    today_gregorian = datetime.now()
-    hijri_date = Gregorian(today_gregorian.year, today_gregorian.month, today_gregorian.day).to_hijri()
-    day_name_english = today_gregorian.strftime("%A")
-    day_name_arabic = ARABIC_WEEKDAYS.get(day_name_english, day_name_english)
-    hijri_month_name_arabic = ARABIC_HIJRI_MONTHS.get(hijri_date.month, "")
-
-    date_text = (
-        f"🗓️\n\n"
-        f"اليوم : {day_name_arabic}\n"
-        f"التاريخ : {hijri_date.day} {hijri_month_name_arabic} {hijri_date.year} هجري\n"
-        f"الموافق : {today_gregorian.day} {today_gregorian.strftime('%B')} {today_gregorian.year} ميلادي"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    
+    # --- جديد: تسجيل أو تحديث بيانات المستخدم في قاعدة البيانات ---
+    add_or_update_user(
+        user_id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username
     )
     
-    await query.edit_message_text(text=date_text, reply_markup=query.message.reply_markup)
+    if not await check_subscription(update, context):
+        return
 
-async def show_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """يعرض الوقت الحالي بناءً على المنطقة الزمنية المحفوظة في قاعدة البيانات."""
-    query = update.callback_query
-    await query.answer()
+    user_mention = user.mention_html()
 
-    # جلب المنطقة الزمنية من الإعدادات، مع قيمة افتراضية في حال عدم وجودها
-    timezone_str = get_setting("timezone", "Asia/Riyadh")
+    welcome_message = get_setting("text_welcome", "أهلاً بك يا {user_mention} في بوت الخير!")
+    btn_date_text = get_setting("btn_date", "📅 التاريخ")
+    btn_time_text = get_setting("btn_time", "⏰ الساعة الآن")
+    btn_reminder_text = get_setting("btn_reminder", "📿 أذكار اليوم")
+    btn_contact_text = get_setting("btn_contact", "📨 تواصل مع الإدارة") # زر جديد
+
+    keyboard = [
+        [InlineKeyboardButton(btn_date_text, callback_data='show_date')],
+        [InlineKeyboardButton(btn_time_text, callback_data='show_time')],
+        [InlineKeyboardButton(btn_reminder_text, callback_data='show_reminder')],
+        [InlineKeyboardButton(btn_contact_text, callback_data='contact_admin')] # زر جديد
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    final_message = welcome_message.format(user_mention=user_mention)
     
-    try:
-        # تحديد المنطقة الزمنية
-        target_tz = pytz.timezone(timezone_str)
-        # استخراج اسم المدينة للعرض
-        city_name = timezone_str.split('/')[-1]
-    except pytz.UnknownTimeZoneError:
-        # في حال تم حفظ قيمة خاطئة في قاعدة البيانات، استخدم قيمة افتراضية آمنة
-        target_tz = pytz.timezone("Asia/Riyadh")
-        city_name = "الرياض"
-
-    time_now = datetime.now(target_tz)
-    
-    # تنسيق الوقت مع الثواني (H: لساعة 24، I: لساعة 12)
-    time_formatted = time_now.strftime("%I:%M:%S %p")
-    time_formatted_arabic = time_formatted.replace("AM", "صباحاً").replace("PM", "مساءً")
-
-    time_text = f"⏰\n\nالساعة الآن {time_formatted_arabic} بتوقيت {city_name}"
-    
-    await query.edit_message_text(text=time_text, reply_markup=query.message.reply_markup)
-
-async def show_daily_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    
-    reminder = get_random_reminder()
-    if reminder:
-        reminder_text = f"📿\n\n{reminder['text']}"
+    if update.callback_query: # إذا كان قادماً من زر "التحقق"
+        await update.callback_query.message.edit_text(final_message, reply_markup=reply_markup, parse_mode='HTML')
     else:
-        reminder_text = "📿\n\nلم تتم إضافة أي أذكار بعد."
-        
-    await query.edit_message_text(text=reminder_text, reply_markup=query.message.reply_markup)
+        await update.message.reply_text(final_message, reply_markup=reply_markup, parse_mode='HTML')
 
-# --- 3. تجميع المعالجات (Handlers) ---
-date_button_handler = CallbackQueryHandler(show_date, pattern='^show_date$')
-time_button_handler = CallbackQueryHandler(show_time, pattern='^show_time$')
-daily_reminder_button_handler = CallbackQueryHandler(show_daily_reminder, pattern='^show_daily_reminder$')
+
+async def recheck_subscription_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # بعد التحقق، نقوم باستدعاء وظيفة start لعرض القائمة الرئيسية إذا نجح
+    if await check_subscription(update, context):
+        await start(update, context)
+
+# معالج زر التواصل مع الإدارة
+async def contact_admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يستجيب لزر التواصل ويرسل إرشادات للمستخدم."""
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text("تفضل بإرسال رسالتك الآن (نص، صورة، ملصق...) وسيتم توصيلها إلى الإدارة مباشرة.")
+
+
+start_handler = CommandHandler("start", start)
+recheck_subscription_callback_handler = CallbackQueryHandler(recheck_subscription_handler, pattern="^check_subscription_again$")
+contact_admin_handler = CallbackQueryHandler(contact_admin_button_handler, pattern="^contact_admin$")
