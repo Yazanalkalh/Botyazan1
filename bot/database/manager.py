@@ -1,78 +1,98 @@
 # -*- coding: utf-8 -*-
 
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler
-import logging
+import pymongo
+from bson.objectid import ObjectId
+import random
 
-from config import TELEGRAM_TOKEN
-from bot.database.manager import db
+from config import MONGO_URI
 
 # --- شرح ---
-# هذا هو الملف الرئيسي الذي يقوم بتشغيل البوت.
-# وظيفته هي تجميع كل "المعالجات" (Handlers) من الملفات الأخرى وتسجيلها في التطبيق.
+# هذا الملف هو "أمين المكتبة" وهو المسؤول الوحيد عن التحدث مع قاعدة بيانات MongoDB.
+# تم إصلاح خطأ "الاستيراد الدائري" الذي كان موجوداً فيه.
 
-# إعداد سجلات الأخطاء (Logging)
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# استيراد المعالجات من ملفاتها المنفصلة
-from bot.handlers.user.start import start_handler
-from bot.handlers.user.callbacks import (
-    date_button_handler,
-    time_button_handler,
-    daily_reminder_button_handler
-)
-from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
-from bot.handlers.admin.reminders_handler import (
-    reminders_panel_handler,
-    add_reminder_conv_handler,
-    view_reminders_handler,
-    delete_reminder_handler,
-    reminders_panel_from_view_handler,
-    import_reminders_conv_handler,
-)
-# --- استيراد جديد ---
-from bot.handlers.admin.interface_handler import (
-    interface_panel_handler,
-    change_timezone_conv_handler,
-)
-
-def main() -> None:
-    """يبدأ تشغيل البوت."""
-    if db is None:
-        logging.error("لا يمكن تشغيل البوت بسبب فشل الاتصال بقاعدة البيانات")
-        return
-
-    # إنشاء كائن التطبيق ووضع التوكن الخاص بالبوت
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    # --- تسجيل المعالجات (Handlers) ---
+try:
+    client = pymongo.MongoClient(MONGO_URI)
+    db = client.get_database("IslamicBotDB") 
     
-    # 1. معالجات المستخدم العادي
-    application.add_handler(start_handler)
-    application.add_handler(date_button_handler)
-    application.add_handler(time_button_handler)
-    application.add_handler(daily_reminder_button_handler)
+    # --- تعريف المجموعات (Collections) ---
+    reminders_collection = db["reminders"]
+    settings_collection = db["settings"] 
 
-    # 2. معالجات لوحة تحكم المدير
-    application.add_handler(admin_handler)
-    application.add_handler(admin_panel_back_handler)
-    
-    # 3. معالجات وحدة التذكيرات
-    application.add_handler(reminders_panel_handler)
-    application.add_handler(add_reminder_conv_handler)
-    application.add_handler(view_reminders_handler)
-    application.add_handler(delete_reminder_handler)
-    application.add_handler(reminders_panel_from_view_handler)
-    application.add_handler(import_reminders_conv_handler)
+    print("تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
+except pymongo.errors.ConnectionFailure as e:
+    print(f"فشل الاتصال بقاعدة بيانات MongoDB: {e}")
+    db = None
+except Exception as e:
+    print(f"حدث خطأ غير متوقع عند الاتصال بـ MongoDB: {e}")
+    db = None
 
-    # 4. --- معالجات جديدة لوحدة تخصيص الواجهة ---
-    application.add_handler(interface_panel_handler)
-    application.add_handler(change_timezone_conv_handler)
+# --- 1. وظائف التذكيرات (Reminders) ---
 
-    # تشغيل البوت حتى يتم إيقافه يدوياً (Ctrl+C)
-    application.run_polling()
+def add_reminder(text):
+    """يضيف تذكيراً جديداً إلى قاعدة البيانات."""
+    if db is None: return False
+    try:
+        reminders_collection.insert_one({"text": text})
+        return True
+    except Exception as e:
+        print(f"خطأ في إضافة تذكير: {e}")
+        return False
 
-if __name__ == '__main__':
-    main()
+def get_all_reminders():
+    """يجلب كل التذكيرات من قاعدة البيانات."""
+    if db is None: return []
+    try:
+        return list(reminders_collection.find())
+    except Exception as e:
+        print(f"خطأ في جلب التذكيرات: {e}")
+        return []
+
+def delete_reminder(reminder_id):
+    """يحذف تذكيراً محدداً باستخدام ID الخاص به."""
+    if db is None: return False
+    try:
+        reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
+        return True
+    except Exception as e:
+        print(f"خطأ في حذف تذكير: {e}")
+        return False
+        
+def get_random_reminder():
+    """يجلب تذكيراً عشوائياً من قاعدة البيانات."""
+    if db is None: return None
+    try:
+        all_reminders = list(reminders_collection.find())
+        if all_reminders:
+            return random.choice(all_reminders)
+        return None
+    except Exception as e:
+        print(f"خطأ في جلب تذكير عشوائي: {e}")
+        return None
+
+# --- 2. وظائف الإعدادات (Settings) ---
+
+def set_setting(setting_name, value):
+    """يحفظ أو يحدّث قيمة إعداد معين في قاعدة البيانات."""
+    if db is None: return False
+    try:
+        settings_collection.update_one(
+            {"name": setting_name},
+            {"$set": {"value": value}},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"خطأ في حفظ الإعداد {setting_name}: {e}")
+        return False
+
+def get_setting(setting_name, default=None):
+    """يجلب قيمة إعداد معين من قاعدة البيانات، أو يعيد القيمة الافتراضية."""
+    if db is None: return default
+    try:
+        setting = settings_collection.find_one({"name": setting_name})
+        if setting:
+            return setting.get("value")
+        return default
+    except Exception as e:
+        print(f"خطأ في جلب الإعداد {setting_name}: {e}")
+        return default
