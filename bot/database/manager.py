@@ -1,60 +1,100 @@
 # -*- coding: utf-8 -*-
 
-from pymongo import MongoClient
-from bson import ObjectId
+import pymongo
+from bson.objectid import ObjectId
 import random
+
 from config import MONGO_URI
 
 # --- شرح ---
-# هذا الملف مسؤول عن إنشاء الاتصال بقاعدة البيانات وإدارة كل عملياتها
+# هذا الملف هو "أمين المكتبة" وهو المسؤول الوحيد عن التحدث مع قاعدة بيانات MongoDB.
+# أي ملف آخر في المشروع يريد معلومة من قاعدة البيانات، يجب أن يطلبها من هذا الملف.
+# تم تحديثه الآن ليشمل وظائف لإدارة الإعدادات العامة للبوت.
 
 try:
-    client = MongoClient(MONGO_URI)
-    db = client.get_database("IslamicBotDB")
+    client = pymongo.MongoClient(MONGO_URI)
+    db = client.get_database("IslamicBotDB") # يمكنك تغيير اسم قاعدة البيانات إذا أردت
     
-    # تعريف "الأقسام" أو الـ Collections التي سنتعامل معها
-    reminders_collection = db["reminders_collection"] # استخدمنا اسماً فريداً
-    
+    # --- تعريف المجموعات (Collections) ---
+    reminders_collection = db["reminders"]
+    settings_collection = db["settings"] # مجموعة جديدة للإعدادات
+
     print("تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
-except Exception as e:
-    print(f"فشل الاتصال بقاعدة البيانات: {e}")
+except pymongo.errors.ConnectionFailure as e:
+    print(f"فشل الاتصال بقاعدة بيانات MongoDB: {e}")
     db = None
-    reminders_collection = None
+except Exception as e:
+    print(f"حدث خطأ غير متوقع عند الاتصال بـ MongoDB: {e}")
+    db = None
 
-# --- الوظائف الجديدة الخاصة بالتذكيرات ---
+# --- 1. وظائف التذكيرات (Reminders) ---
 
-def add_reminder(text: str) -> bool:
+def add_reminder(text):
     """يضيف تذكيراً جديداً إلى قاعدة البيانات."""
-    if reminders_collection is not None:
+    if db is None: return False
+    try:
         reminders_collection.insert_one({"text": text})
         return True
-    return False
+    except Exception as e:
+        print(f"خطأ في إضافة تذكير: {e}")
+        return False
 
-def get_all_reminders() -> list:
-    """يجلب كل التذكيرات المحفوظة."""
-    if reminders_collection is not None:
+def get_all_reminders():
+    """يجلب كل التذكيرات من قاعدة البيانات."""
+    if db is None: return []
+    try:
         return list(reminders_collection.find())
-    return []
+    except Exception as e:
+        print(f"خطأ في جلب التذكيرات: {e}")
+        return []
 
-def delete_reminder(reminder_id: str) -> bool:
-    """يحذف تذكيراً باستخدام الـ ID الخاص به."""
-    if reminders_collection is not None:
-        try:
-            result = reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
-            return result.deleted_count > 0
-        except:
-            return False
-    return False
+def delete_reminder(reminder_id):
+    """يحذف تذكيراً محدداً باستخدام ID الخاص به."""
+    if db is None: return False
+    try:
+        reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
+        return True
+    except Exception as e:
+        print(f"خطأ في حذف تذكير: {e}")
+        return False
+        
+def get_random_reminder():
+    """يجلب تذكيراً عشوائياً من قاعدة البيانات."""
+    if db is None: return None
+    try:
+        all_reminders = list(reminders_collection.find())
+        if all_reminders:
+            return random.choice(all_reminders)
+        return None
+    except Exception as e:
+        print(f"خطأ في جلب تذكير عشوائي: {e}")
+        return None
 
-def get_random_reminder() -> dict | None:
-    """يختار تذكيراً واحداً بشكل عشوائي."""
-    if reminders_collection is not None:
-        # هذه الطريقة أسرع في MongoDB لجلب عنصر عشوائي
-        pipeline = [{"$sample": {"size": 1}}]
-        try:
-            random_docs = list(reminders_collection.aggregate(pipeline))
-            if random_docs:
-                return random_docs[0]
-        except:
-            return None
-    return None
+# --- 2. وظائف الإعدادات (Settings) - جديد ---
+
+def set_setting(setting_name, value):
+    """يحفظ أو يحدّث قيمة إعداد معين في قاعدة البيانات."""
+    if db is None: return False
+    try:
+        # update_one مع upsert=True ستقوم بإنشاء الإعداد إذا لم يكن موجوداً، وتحديثه إذا كان موجوداً
+        settings_collection.update_one(
+            {"name": setting_name},
+            {"$set": {"value": value}},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"خطأ في حفظ الإعداد {setting_name}: {e}")
+        return False
+
+def get_setting(setting_name, default=None):
+    """يجلب قيمة إعداد معين من قاعدة البيانات، أو يعيد القيمة الافتراضية."""
+    if db is None: return default
+    try:
+        setting = settings_collection.find_one({"name": setting_name})
+        if setting:
+            return setting.get("value")
+        return default # يعيد القيمة الافتراضية إذا لم يجد الإعداد
+    except Exception as e:
+        print(f"خطأ في جلب الإعداد {setting_name}: {e}")
+        return default
