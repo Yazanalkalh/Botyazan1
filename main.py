@@ -1,62 +1,58 @@
 # -*- coding: utf-8 -*-
 
-import logging
+import asyncio
+from telegram import Update
 from telegram.ext import Application
 
 from config import TELEGRAM_TOKEN
 from bot.database.manager import db
 
-# معالجات المستخدم
-from bot.handlers.user.start import start_handler
-from bot.handlers.user.callbacks import user_callback_handler
+# --- استيراد معالجات المستخدمين (النهائية) ---
+from bot.handlers.user.start import start_handler, recheck_subscription_callback_handler, contact_admin_handler
+from bot.handlers.user.callbacks import show_date, show_time, show_reminder
+from bot.handlers.user.message_handler import message_forwarder_handler
 
-# معالجات المدير الرئيسية
+# --- استيراد معالجات المدير (النهائية) ---
 from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
+from bot.handlers.admin.approval_handler import channel_approval_tracker, channel_decision_handler
+from bot.handlers.admin.communication_handler import admin_reply_handler
+from bot.handlers.admin.reminders_handler import *
+from bot.handlers.admin.interface_handler import *
+from bot.handlers.admin.subscription_handler import *
+from bot.handlers.admin.text_editor_handler import *
 
-# --- تم التصحيح هنا ---
-# استيراد المعالجات الجديدة الخاصة بوحدة التذكيرات من الملف بالاسم الصحيح
-from bot.handlers.admin.reminders_handler import (
-    reminders_panel_handler,
-    add_reminder_conv_handler,
-    view_reminders_handler,
-    delete_reminder_handler,
-    import_reminders_conv_handler,
-    reminders_panel_from_view_handler
-)
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-def main() -> None:
+async def main():
     if db is None:
-        logger.error("لا يمكن تشغيل البوت بسبب فشل الاتصال بقاعدة البيانات.")
+        print("لا يمكن تشغيل البوت بسبب فشل الاتصال بقاعدة البيانات")
         return
-        
+
     application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    # تمت إضافة المعالجات الجديدة بالترتيب الصحيح (المحادثات أولاً)
-    
-    # 1. معالجات المحادثات
-    application.add_handler(add_reminder_conv_handler)
-    application.add_handler(import_reminders_conv_handler)
-    
-    # 2. معالجات الأوامر
-    application.add_handler(start_handler)
-    application.add_handler(admin_handler)
 
-    # 3. معالجات ضغطات الأزرار (CallbackQueryHandlers)
-    application.add_handler(user_callback_handler)
-    application.add_handler(admin_panel_back_handler)
-    application.add_handler(reminders_panel_handler)
-    application.add_handler(view_reminders_handler)
-    application.add_handler(delete_reminder_handler)
-    application.add_handler(reminders_panel_from_view_handler)
+    # --- إضافة المعالجات (القائمة النهائية الكاملة) ---
+    handlers = [
+        # نظام الموافقة على القنوات
+        channel_approval_tracker, channel_decision_handler,
+        # نظام رد المدير على المستخدمين
+        admin_reply_handler,
+        
+        # معالجات المستخدم
+        start_handler, recheck_subscription_callback_handler, contact_admin_handler,
+        show_date, show_time, show_reminder,
+        
+        # معالج الرسائل العامة من المستخدمين (يجب أن يكون من الأواخر)
+        message_forwarder_handler,
 
-    logger.info("البوت قيد التشغيل...")
-    application.run_polling()
+        # معالجات المدير - اللوحة الرئيسية والوحدات
+        admin_handler, admin_panel_back_handler,
+        reminders_menu_handler, view_all_reminders_handler, delete_reminder_handler, add_reminder_conversation_handler,
+        interface_menu_handler, change_timezone_conversation_handler,
+        subscription_menu_handler, view_channels_main_handler, delete_channel_main_handler, add_channel_conversation_handler,
+        edit_texts_menu_handler, edit_texts_conversation_handler
+    ]
+    application.add_handlers(handlers)
 
-if __name__ == '__main__':
-    main()
+    print("البوت قيد التشغيل...")
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    asyncio.run(main())
