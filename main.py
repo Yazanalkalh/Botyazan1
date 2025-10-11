@@ -13,9 +13,9 @@ from bot.handlers.user.callbacks import user_callback_handler
 # معالجات المدير الرئيسية
 from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
 
-# --- جديد ---
-# استيراد المعالجات الجديدة الخاصة بوحدة التذكيرات
-from bot.handlers.admin.02_reminders import (
+# --- تم التصحيح هنا ---
+# استيراد المعالجات الجديدة الخاصة بوحدة التذكيرات من الملف بالاسم الصحيح
+from bot.handlers.admin.reminders_handler import (
     reminders_panel_handler,
     add_reminder_conv_handler,
     view_reminders_handler,
@@ -37,7 +37,6 @@ def main() -> None:
         
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # --- تحديث ---
     # تمت إضافة المعالجات الجديدة بالترتيب الصحيح (المحادثات أولاً)
     
     # 1. معالجات المحادثات
@@ -46,11 +45,11 @@ def main() -> None:
     
     # 2. معالجات الأوامر
     application.add_handler(start_handler)
-    application.add_handler(admin_handler) # This now uses the decorated admin_panel
+    application.add_handler(admin_handler)
 
     # 3. معالجات ضغطات الأزرار (CallbackQueryHandlers)
     application.add_handler(user_callback_handler)
-    application.add_handler(admin_panel_back_handler) # Handles back to main panel
+    application.add_handler(admin_panel_back_handler)
     application.add_handler(reminders_panel_handler)
     application.add_handler(view_reminders_handler)
     application.add_handler(delete_reminder_handler)
