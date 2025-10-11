@@ -1,0 +1,5 @@
+python-telegram-bot
+pymongo[srv]
+python-dotenv
+hijri-converter
+pytz
