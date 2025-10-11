@@ -1,25 +1,18 @@
 # -*- coding: utf-8 -*-
 
 import os
-from dotenv import load_dotenv
 
 # --- شرح ---
-# هذا الملف يقرأ المتغيرات السرية (التوكن، رابط القاعدة) من بيئة العمل
-# هذا يضمن أن معلوماتك الحساسة لا تكون مكتوبة مباشرة في الكود
-load_dotenv()
+# هذا الملف هو المسؤول عن قراءة "متغيرات البيئة" (الأسرار) التي قمت بتعيينها في لوحة تحكم Render.
+# يستخدم مكتبة os المدمجة في بايثون للقيام بذلك بأمان.
+# هذه هي النسخة النهائية التي لا تعتمد على مكتبة dotenv.
 
-# قراءة توكن البوت من متغيرات البيئة
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# قراءة توكن البوت
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
-# قراءة معرّف المدير من متغيرات البيئة
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
+# قراءة رابط الاتصال بقاعدة البيانات
+MONGO_URI = os.environ.get("MONGO_URI")
 
-# قراءة رابط الاتصال بقاعدة بيانات MongoDB
-MONGO_URI = os.getenv("MONGO_URI")
-
-# هذا الكود يتأكد من أنك لم تنسَ وضع أي من المتغيرات المطلوبة
-if not TELEGRAM_TOKEN or not MONGO_URI or not ADMIN_USER_ID:
-    raise ValueError(
-        "خطأ: يرجى التأكد من تعيين المتغيرات التالية في بيئة العمل: "
-        "TELEGRAM_TOKEN, ADMIN_USER_ID, MONGO_URI"
-    )
+# قراءة معرّف حساب المدير (يتم تحويله إلى عدد صحيح)
+# نستخدم int() للتحويل لأن المعرّفات تكون أرقاماً.
+ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", 0))
