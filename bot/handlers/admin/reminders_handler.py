@@ -1,165 +1,176 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import math
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    ContextTypes, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+    ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 )
-from bot.database.manager import add_reminder, get_all_reminders, delete_reminder
-import io
+from bot.database.manager import db
 
-# --- States for ConversationHandler ---
-ADD_REMINDER, IMPORT_REMINDERS = range(2)
+# --- состояний ---
+SELECTING_ACTION, ADDING_REMINDER, IMPORTING_REMINDERS = range(3)
+ITEMS_PER_PAGE = 8 # عدد العناصر في كل صفحة
 
-# --- Menu Handler ---
-async def reminders_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def reminders_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """يعرض لوحة تحكم التذكيرات."""
     query = update.callback_query
     await query.answer()
 
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder_start")],
-        [InlineKeyboardButton("📂 استيراد من ملف", callback_data="import_reminders_start")],
-        [InlineKeyboardButton("👀 عرض جميع الأذكار", callback_data="view_all_reminders")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
+        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder")],
+        [InlineKeyboardButton("📥 استيراد من ملف", callback_data="import_reminders")],
+        [InlineKeyboardButton("👁️ عرض جميع الأذكار", callback_data="view_all_reminders_page_1")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text="اختر إجراءً لإدارة الأذكار:", reply_markup=reply_markup)
+    
+    await query.edit_message_text(
+        text="اختر الإجراء المتعلق بالأذكار:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return SELECTING_ACTION
 
-# --- View and Delete Handlers ---
-async def view_all_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- منطق عرض الصفحات ---
+async def view_reminders_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """يعرض صفحة محددة من الأذكار."""
     query = update.callback_query
     await query.answer()
+    
+    # استخراج رقم الصفحة من callback_data (e.g., "view_all_reminders_page_1")
+    page = int(query.data.split('_')[-1])
 
-    reminders = await get_all_reminders()
-    if not reminders:
-        keyboard = [
-            [InlineKeyboardButton("➕ إضافة المزيد", callback_data="add_reminder_start")],
-            [InlineKeyboardButton("🔙 رجوع", callback_data="reminders_panel")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("لا توجد أذكار محفوظة حالياً.", reply_markup=reply_markup)
-        return
-
-    text = "قائمة الأذكار المحفوظة:\n\n"
-    keyboard = []
-    for reminder in reminders:
-        reminder_text_preview = reminder['text'][:40] + "..." if len(reminder['text']) > 40 else reminder['text']
-        keyboard.append([
-            InlineKeyboardButton(reminder_text_preview, callback_data=f"rem_noop_{reminder['_id']}"),
-            InlineKeyboardButton("🗑️ حذف", callback_data=f"delete_reminder_{reminder['_id']}")]
+    total_reminders = await db.count_reminders()
+    if total_reminders == 0:
+        await query.edit_message_text(
+            text="لا توجد أي أذكار محفوظة حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ إضافة ذكر", callback_data="add_reminder")],
+                [InlineKeyboardButton("🔙 رجوع", callback_data="reminders_panel_back")]
+            ])
         )
-    
-    keyboard.append([InlineKeyboardButton("➕ إضافة المزيد", callback_data="add_reminder_start")])
-    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="reminders_panel")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup)
+        return SELECTING_ACTION
 
-async def delete_reminder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer("جاري الحذف...")
-    
-    reminder_id = query.data.split("_")[2]
-    await delete_reminder(reminder_id)
-    
-    # لا نعدل الرسالة هنا، بل نعيد استدعاء وظيفة العرض لتحديث القائمة
-    await view_all_reminders(update, context)
+    total_pages = math.ceil(total_reminders / ITEMS_PER_PAGE)
+    reminders_on_page = await db.get_reminders_by_page(page=page, limit=ITEMS_PER_PAGE)
 
-# --- Add Reminder Conversation ---
-async def add_reminder_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    for reminder in reminders_on_page:
+        # عرض أول 30 حرفاً من الذكر على الزر
+        reminder_text = reminder['text'][:30] + '...' if len(reminder['text']) > 30 else reminder['text']
+        keyboard.append([
+            InlineKeyboardButton(reminder_text, callback_data=f"noop"), # noop = no operation
+            InlineKeyboardButton("🗑️", callback_data=f"delete_reminder_{reminder['_id']}_{page}")
+        ])
+
+    # --- بناء أزرار التنقل ---
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(InlineKeyboardButton("◀️ السابق", callback_data=f"view_all_reminders_page_{page-1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(f"صفحة {page}/{total_pages}", callback_data="noop"))
+
+    if page < total_pages:
+        nav_buttons.append(InlineKeyboardButton("التالي ▶️", callback_data=f"view_all_reminders_page_{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    keyboard.append([
+        InlineKeyboardButton("➕ إضافة المزيد", callback_data="add_reminder"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="reminders_panel_back")
+    ])
+
+    await query.edit_message_text(
+        text=f"قائمة الأذكار (صفحة {page}):",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return SELECTING_ACTION
+
+# --- منطق الحذف ---
+async def delete_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """يحذف ذكراً ويعيد عرض الصفحة الحالية."""
     query = update.callback_query
     await query.answer()
-    keyboard = [[InlineKeyboardButton("🔙 إلغاء", callback_data="cancel_add_reminder")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("أرسل الآن نص الذكر الجديد.", reply_markup=reply_markup)
-    return ADD_REMINDER
-
-async def add_reminder_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reminder_text = update.message.text
-    await add_reminder(reminder_text)
     
-    # --- الإصلاح ---
-    # بدلاً من محاكاة زر، نرسل القائمة الرئيسية مباشرة
-    keyboard = [
-        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder_start")],
-        [InlineKeyboardButton("📂 استيراد من ملف", callback_data="import_reminders_start")],
-        [InlineKeyboardButton("👀 عرض جميع الأذكار", callback_data="view_all_reminders")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("✅ تم إضافة الذكر بنجاح.\n\nاختر إجراءً لإدارة الأذكار:", reply_markup=reply_markup)
+    parts = query.data.split('_')
+    reminder_id = parts[2]
+    page_to_return = int(parts[3])
 
+    await db.delete_reminder(reminder_id)
+
+    # إعادة تحميل نفس الصفحة بعد الحذف
+    # تعديل query.data بشكل مصطنع لاستدعاء وظيفة عرض الصفحة
+    context.callback_query.data = f"view_all_reminders_page_{page_to_return}"
+    return await view_reminders_page(update, context)
+
+# --- بقية وظائف إضافة واستيراد التذكيرات تبقى كما هي ---
+async def request_reminder_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text="أرسل الآن نص الذكر الجديد:")
+    return ADDING_REMINDER
+
+async def handle_reminder_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await db.add_reminder(update.message.text)
+    await update.message.reply_text("✅ تم حفظ الذكر بنجاح.")
+    
+    # العودة إلى قائمة التذكيرات بعد الإضافة
+    # محاكاة ضغطة زر الرجوع
+    from bot.handlers.admin.main_panel import reminders_panel_callback
+    await reminders_panel_callback(update, context)
     return ConversationHandler.END
 
-async def cancel_add_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def request_reminders_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await reminders_panel(update, context)
-    return ConversationHandler.END
+    await query.edit_message_text(text="أرسل الآن ملف .txt يحتوي على الأذكار (كل ذكر في سطر).")
+    return IMPORTING_REMINDERS
 
-# --- Import Reminders Conversation ---
-async def import_reminders_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    keyboard = [[InlineKeyboardButton("🔙 إلغاء", callback_data="cancel_import_reminders")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("أرسل الآن ملف .txt يحتوي على الأذكار (كل ذكر في سطر).", reply_markup=reply_markup)
-    return IMPORT_REMINDERS
-
-async def import_reminders_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_reminders_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     document = update.message.document
-    if not document or not document.file_name.endswith('.txt'):
+    if not document.file_name.endswith('.txt'):
         await update.message.reply_text("الملف غير صالح. يرجى إرسال ملف بصيغة .txt")
-        return IMPORT_REMINDERS
+        return IMPORTING_REMINDERS
 
     file = await context.bot.get_file(document.file_id)
-    file_content = await file.download_as_bytearray()
+    file_content_bytes = await file.download_as_bytearray()
+    file_content = file_content_bytes.decode('utf-8')
     
-    text_stream = io.StringIO(file_content.decode('utf-8'))
+    reminders = [line.strip() for line in file_content.splitlines() if line.strip()]
     
     count = 0
-    for line in text_stream:
-        reminder_text = line.strip()
-        if reminder_text:
-            await add_reminder(reminder_text)
-            count += 1
-            
-    # --- الإصلاح ---
-    keyboard = [
-        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder_start")],
-        [InlineKeyboardButton("📂 استيراد من ملف", callback_data="import_reminders_start")],
-        [InlineKeyboardButton("👀 عرض جميع الأذكار", callback_data="view_all_reminders")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"✅ تم استيراد {count} ذكر بنجاح.\n\nاختر إجراءً لإدارة الأذكار:", reply_markup=reply_markup)
+    for reminder_text in reminders:
+        await db.add_reminder(reminder_text)
+        count += 1
+        
+    await update.message.reply_text(f"✅ تم استيراد وحفظ {count} ذكراً بنجاح.")
     
+    from bot.handlers.admin.main_panel import reminders_panel_callback
+    await reminders_panel_callback(update, context)
     return ConversationHandler.END
 
-async def cancel_import_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await reminders_panel(update, context)
-    return ConversationHandler.END
 
-# --- Handlers Definition ---
+# --- بناء المعالجات ---
 reminders_panel_handler = CallbackQueryHandler(reminders_panel, pattern="^reminders_panel$")
-view_all_reminders_handler = CallbackQueryHandler(view_all_reminders, pattern="^view_all_reminders$")
-delete_reminder_handler = CallbackQueryHandler(delete_reminder_callback, pattern="^delete_reminder_")
+reminders_panel_back_handler = CallbackQueryHandler(reminders_panel, pattern="^reminders_panel_back$")
+
+# معالج جديد لصفحات التذكيرات
+reminders_page_handler = CallbackQueryHandler(view_reminders_page, pattern=r"^view_all_reminders_page_\d+$")
+delete_reminder_handler = CallbackQueryHandler(delete_reminder, pattern=r"^delete_reminder_.+_\d+$")
 
 add_reminder_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(add_reminder_start, pattern="^add_reminder_start$")],
+    entry_points=[CallbackQueryHandler(request_reminder_input, pattern="^add_reminder$")],
     states={
-        ADD_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_reminder_receive)]
+        ADDING_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reminder_input)],
     },
-    fallbacks=[CallbackQueryHandler(cancel_add_reminder, pattern="^cancel_add_reminder$")],
+    fallbacks=[],
     per_message=False
 )
 
 import_reminders_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(import_reminders_start, pattern="^import_reminders_start$")],
+    entry_points=[CallbackQueryHandler(request_reminders_file, pattern="^import_reminders$")],
     states={
-        IMPORT_REMINDERS: [MessageHandler(filters.Document.TXT, import_reminders_receive)]
+        IMPORTING_REMINDERS: [MessageHandler(filters.Document.TXT, handle_reminders_file)],
     },
-    fallbacks=[CallbackQueryHandler(cancel_import_reminders, pattern="^cancel_import_reminders$")],
+    fallbacks=[],
     per_message=False
 )
