@@ -2,40 +2,28 @@
 
 from aiogram import types, Dispatcher
 from config import ADMIN_USER_ID
-import re
-
-def _extract_reply_info(message: types.Message) -> (int | None, int | None):
-    """
-    وظيفة متخصصة لاستخراج معلومات الرد من نص أو تعليق.
-    """
-    text_to_search = message.caption or message.text
-    if not text_to_search:
-        return None, None
-
-    user_id_match = re.search(r"User ID:\s*`(\d+)`", text_to_search)
-    message_id_match = re.search(r"Message ID:\s*`(\d+)`", text_to_search)
-
-    user_id = int(user_id_match.group(1)) if user_id_match else None
-    message_id = int(message_id_match.group(1)) if message_id_match else None
-        
-    return user_id, message_id
-
+from bot.database.manager import db
 
 async def reply_to_user(message: types.Message):
     """
-    يعالج ردود المدير ويرسلها كرد مباشر للمستخدم.
+    يعالج ردود المدير باستخدام نظام الربط في قاعدة البيانات.
     """
     if message.from_user.id != ADMIN_USER_ID or not message.reply_to_message:
         return
 
-    original_user_id, original_message_id = _extract_reply_info(message.reply_to_message)
+    admin_message_id = message.reply_to_message.message_id
+    
+    # --- البحث في "سجل البريد" عن المعلومات الصحيحة ---
+    forward_info = await db.get_forwarded_message_info(admin_message_id)
 
-    if not original_user_id or not original_message_id:
+    if not forward_info:
         return
+
+    original_user_id = forward_info.get("user_id")
+    original_message_id = forward_info.get("user_message_id")
 
     try:
         # --- الإرسال كرد مباشر للمستخدم الأصلي ---
-        # هذا هو السطر الذي تم حذفه بالخطأ وإعادته الآن
         await message.bot.send_message(
             chat_id=original_user_id,
             text=message.text,
