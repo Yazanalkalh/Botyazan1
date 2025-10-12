@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, ForwardedMessage
+from telegram import Update
 from telegram.ext import MessageHandler, filters, ContextTypes
 
 from config import ADMIN_USER_ID
