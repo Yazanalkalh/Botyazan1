@@ -11,7 +11,6 @@ class DatabaseManager:
     def __init__(self):
         self.client = None
         self.db = None
-        # سيتم تهيئة المجموعات في connect_to_database
 
     def is_connected(self) -> bool:
         """فحص سريع للاتصال."""
@@ -21,7 +20,6 @@ class DatabaseManager:
         """الاتصال بقاعدة البيانات واختبار الاتصال."""
         try:
             self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
-            # --- التحسين رقم 3: اختبار الاتصال الفعلي ---
             await self.client.admin.command("ping")
             
             self.db = self.client.get_database("IslamicBotDBAiogram")
@@ -58,32 +56,43 @@ class DatabaseManager:
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
 
     # --- وظائف المستخدمين ---
-    async def add_user(self, user):
-        """إضافة مستخدم جديد أو تحديث بياناته (مع معالجة القيم الفارغة)."""
-        if not self.is_connected(): return
-        # --- التحسين رقم 1: معالجة القيم الفارغة ---
+    async def add_user(self, user) -> bool:
+        """
+        إضافة مستخدم جديد أو تحديث بياناته.
+        ترجع True إذا كان المستخدم جديداً, و False إذا كان موجوداً مسبقاً.
+        """
+        if not self.is_connected(): return False
+        
         user_data = {
-            'user_id': user.id,
             'first_name': user.first_name or "",
             'last_name': getattr(user, 'last_name', "") or "",
             'username': user.username or ""
         }
-        await self.users_collection.update_one({'user_id': user.id}, {'$set': user_data}, upsert=True)
+
+        # التحقق مما إذا كان المستخدم موجوداً
+        result = await self.users_collection.update_one(
+            {'user_id': user.id},
+            {'$set': user_data, '$setOnInsert': {'user_id': user.id}},
+            upsert=True
+        )
+
+        # upserted_id يكون له قيمة فقط إذا تم إنشاء مستند جديد
+        if result.upserted_id is not None:
+            return True # مستخدم جديد
+        else:
+            return False # مستخدم موجود مسبقاً
 
     # --- وظائف النصوص ---
     async def get_text(self, text_id: str) -> str:
-        """جلب نص معين من قاعدة البيانات."""
         if not self.is_connected(): return "..."
         doc = await self.texts_collection.find_one({"_id": text_id})
-        default_text = "نص غير متوفر"
-        return doc.get("text", default_text) if doc else default_text
+        return doc.get("text", "نص غير متوفر") if doc else "نص غير متوفر"
 
     # --- وظائف التذكيرات ---
     async def get_random_reminder(self) -> str:
         if not self.is_connected(): return "لا توجد أذكار حالياً."
         pipeline = [{"$sample": {"size": 1}}]
-        async for doc in self.reminders_collection.aggregate(pipeline):
-            return doc.get("text", "لا توجد أذكار حالياً.")
+        async for doc in self.reminders_collection.aggregate(pipeline): return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
 
     # --- وظائف الإعدادات ---
@@ -94,22 +103,9 @@ class DatabaseManager:
         
     # --- وظائف الاشتراك الإجباري ---
     async def get_subscription_channels(self) -> list[str]:
-        """جلب قائمة بأسماء مستخدمي قنوات الاشتراك الإجباري."""
         if not self.is_connected(): return []
         channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
-        # --- التحسين رقم 2: إرجاع قائمة نصوص نظيفة ---
         channels_list = await channels_cursor.to_list(length=None)
         return [ch["username"] for ch in channels_list]
-
-    async def add_subscription_channel(self, channel_username: str) -> bool:
-        if not self.is_connected(): return False
-        if not await self.subscription_channels_collection.find_one({"username": channel_username}):
-            await self.subscription_channels_collection.insert_one({"username": channel_username})
-            return True
-        return False
-
-    async def delete_subscription_channel(self, channel_username: str):
-        if not self.is_connected(): return
-        await self.subscription_channels_collection.delete_one({"username": channel_username})
 
 db = DatabaseManager()
