@@ -17,16 +17,12 @@ class DatabaseManager:
         """الاتصال بقاعدة البيانات باستخدام motor."""
         try:
             self.client = AsyncIOMotorClient(uri)
-            self.db = self.client.get_database("IslamicBotDBAiogram") # اسم جديد لتجنب التعارض
+            self.db = self.client.get_database("IslamicBotDBAiogram")
             
             self.users_collection = self.db.users
-            self.approved_channels_collection = self.db.approved_channels
-            self.subscription_channels_collection = self.db.subscription_channels
             self.texts_collection = self.db.texts
             self.reminders_collection = self.db.reminders
             self.settings_collection = self.db.settings
-            self.temp_posts_collection = self.db.temp_posts
-            self.scheduled_posts_collection = self.db.scheduled_posts
             
             await self.initialize_defaults()
             logger.info("تم الاتصال بقاعدة بيانات MongoDB بنجاح (aiogram).")
@@ -47,16 +43,34 @@ class DatabaseManager:
         
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
 
+    # --- وظائف المستخدمين ---
     async def add_user(self, user):
-        """إضافة مستخدم جديد أو تحديث بياناته."""
         user_data = {
-            'user_id': user.id,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'username': user.username
+            'user_id': user.id, 'first_name': user.first_name,
+            'last_name': user.last_name, 'username': user.username
         }
         await self.users_collection.update_one({'user_id': user.id}, {'$set': user_data}, upsert=True)
 
-# ... بقية وظائف قاعدة البيانات يمكن إضافتها هنا عند الحاجة ...
+    # --- وظائف النصوص ---
+    async def get_text(self, text_id: str) -> str:
+        """جلب نص معين من قاعدة البيانات."""
+        doc = await self.texts_collection.find_one({"_id": text_id})
+        default_text = text_id.replace("_", " ").title() # نص افتراضي
+        return doc.get("text", default_text) if doc else default_text
+
+    # --- وظائف التذكيرات ---
+    async def get_random_reminder(self) -> str:
+        """جلب تذكير عشوائي."""
+        pipeline = [{"$sample": {"size": 1}}]
+        # aggregate returns an async cursor
+        async for doc in self.reminders_collection.aggregate(pipeline):
+            return doc.get("text", "لا توجد أذكار حالياً.")
+        return "لا توجد أذكار حالياً."
+
+    # --- وظائف الإعدادات ---
+    async def get_timezone(self) -> str:
+        """جلب المنطقة الزمنية من الإعدادات."""
+        doc = await self.settings_collection.find_one({"_id": "timezone"})
+        return doc.get("value", "Asia/Riyadh") if doc else "Asia/Riyadh"
 
 db = DatabaseManager()
