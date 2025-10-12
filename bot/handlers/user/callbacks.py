@@ -1,60 +1,92 @@
 # -*- coding: utf-8 -*-
 
 from telegram import Update
-from telegram.ext import CallbackQueryHandler, ContextTypes
-from hijri_converter import Hijri, Gregorian
-import pytz
+from telegram.ext import ContextTypes, CallbackQueryHandler
 from datetime import datetime
+import pytz
+from hijri_converter import Gregorian
 
-from bot.database.manager import get_random_reminder, get_setting
+from bot.database.manager import get_random_reminder, get_timezone
 from .start import check_subscription
 
-DAYS = {"Saturday": "السبت", "Sunday": "الأحد", "Monday": "الاثنين", "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"}
-MONTHS = {"Muharram": "محرّم", "Safar": "صفر", "Rabi' al-awwal": "ربيع الأول", "Rabi' al-thani": "ربيع الثاني", "Jumada al-ula": "جمادى الأولى", "Jumada al-thani": "جمادى الآخرة", "Rajab": "رجب", "Sha'ban": "شعبان", "Ramadan": "رمضان", "Shawwal": "شوال", "Dhu al-Qi'dah": "ذو القعدة", "Dhu al-Hijjah": "ذو الحجة"}
-GREG_MONTHS = {"January": "يناير", "February": "فبراير", "March": "مارس", "April": "أبريل", "May": "مايو", "June": "يونيو", "July": "يوليو", "August": "أغسطس", "September": "سبتمبر", "October": "أكتوبر", "November": "نوفمبر", "December": "ديسمبر"}
+# --- شرح ---
+# هذا الملف مسؤول عن وظائف الأزرار الرئيسية: التاريخ، الساعة، والأذكار.
+# كل وظيفة تتحقق من الاشتراك أولاً قبل تنفيذ الأمر.
 
-async def show_date_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context): return
+ARABIC_DAYS = {
+    "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين", 
+    "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"
+}
+ARABIC_MONTHS_HIJRI = {
+    1: "محرم", 2: "صفر", 3: "ربيع الأول", 4: "ربيع الثاني", 5: "جمادى الأولى",
+    6: "جمادى الآخرة", 7: "رجب", 8: "شعبان", 9: "رمضان", 10: "شوال",
+    11: "ذو القعدة", 12: "ذو الحجة"
+}
+ARABIC_MONTHS_GREGORIAN = {
+    1: "يناير", 2: "فبراير", 3: "مارس", 4: "أبريل", 5: "مايو", 6: "يونيو",
+    7: "يوليو", 8: "أغسطس", 9: "سبتمبر", 10: "أكتوبر", 11: "نوفمبر", 12: "ديسمبر"
+}
 
-    today_greg = datetime.now()
-    hijri_date = Gregorian(today_greg.year, today_greg.month, today_greg.day).to_hijri()
+async def show_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يعرض التاريخ الهجري والميلادي باللغة العربية."""
+    query = update.callback_query
+    await query.answer()
 
-    day_name = DAYS.get(today_greg.strftime('%A'), "")
-    month_name = MONTHS.get(hijri_date.month_name(), "")
-    greg_month_name = GREG_MONTHS.get(today_greg.strftime('%B'), "")
+    if not await check_subscription(update, context):
+        return
 
-    formatted_date = (
-        f"اليوم : {day_name}\n"
-        f"التاريخ : {hijri_date.day} {month_name} {hijri_date.year} هـ\n"
-        f"الموافق : {today_greg.day} {greg_month_name} {today_greg.year} م"
-    )
-    await update.callback_query.answer(formatted_date, show_alert=True)
-
-async def show_time_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context): return
-
-    timezone_str = get_setting("TIMEZONE", "Asia/Riyadh")
-    try:
-        user_timezone = pytz.timezone(timezone_str)
-    except pytz.UnknownTimeZoneError:
-        user_timezone = pytz.timezone("Asia/Riyadh")
-        timezone_str = "Asia/Riyadh (افتراضي)"
-
-    now = datetime.now(user_timezone)
-    city_name = timezone_str.split('/')[-1].replace('_', ' ')
+    now = datetime.now()
     
-    formatted_time = f"الساعة الآن {now.strftime('%H:%M:%S')} بتوقيت {city_name}"
-    await update.callback_query.answer(formatted_time, show_alert=True)
+    # التحويل إلى هجري
+    hijri = Gregorian(now.year, now.month, now.day).to_hijri()
+    day_name_en = now.strftime('%A')
+    day_name_ar = ARABIC_DAYS.get(day_name_en, day_name_en)
 
-async def show_reminder_func(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context): return
+    hijri_month_name = ARABIC_MONTHS_HIJRI.get(hijri.month, "")
+    gregorian_month_name = ARABIC_MONTHS_GREGORIAN.get(now.month, "")
 
-    reminder = get_random_reminder()
-    if reminder and 'text' in reminder:
-        await update.callback_query.answer(reminder['text'], show_alert=True)
+    date_text = (
+        f"اليوم: {day_name_ar}\n"
+        f"التاريخ الهجري: {hijri.day} {hijri_month_name} {hijri.year} هـ\n"
+        f"التاريخ الميلادي: {now.day} {gregorian_month_name} {now.year} م"
+    )
+    await query.edit_message_text(text=date_text, reply_markup=query.message.reply_markup)
+
+async def show_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يعرض الوقت الحالي بناءً على المنطقة الزمنية المحددة من المدير."""
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_subscription(update, context):
+        return
+
+    selected_timezone = await get_timezone()
+    try:
+        tz = pytz.timezone(selected_timezone)
+        now = datetime.now(tz)
+        # استخراج اسم المدينة من المنطقة الزمنية
+        city_name = selected_timezone.split('/')[-1].replace('_', ' ')
+        time_text = f"الساعة الآن: {now.strftime('%I:%M:%S %p')}\nبتوقيت: {city_name}"
+    except pytz.UnknownTimeZoneError:
+        time_text = "خطأ: المنطقة الزمنية المحددة غير صالحة. يرجى مراجعة مدير البوت."
+    
+    await query.edit_message_text(text=time_text, reply_markup=query.message.reply_markup)
+
+async def show_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يعرض ذكراً عشوائياً من قاعدة البيانات."""
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_subscription(update, context):
+        return
+
+    reminder = await get_random_reminder()
+    if reminder:
+        await query.edit_message_text(text=reminder['text'], reply_markup=query.message.reply_markup)
     else:
-        await update.callback_query.answer("لا توجد أذكار مضافة حالياً.", show_alert=True)
+        no_reminders_text = await get_text("no_reminders_available", "لا توجد أذكار متاحة حالياً.")
+        await query.edit_message_text(text=no_reminders_text, reply_markup=query.message.reply_markup)
 
-show_date = CallbackQueryHandler(show_date_func, pattern='^show_date$')
-show_time = CallbackQueryHandler(show_time_func, pattern='^show_time$')
-show_reminder = CallbackQueryHandler(show_reminder_func, pattern='^show_reminder$')
+show_date_handler = CallbackQueryHandler(show_date, pattern="^show_date$")
+show_time_handler = CallbackQueryHandler(show_time, pattern="^show_time$")
+show_reminder_handler = CallbackQueryHandler(show_reminder, pattern="^show_reminder$")
