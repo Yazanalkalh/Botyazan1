@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-import traceback # استيراد مكتبة تشخيص الأخطاء
 from telegram import Update
 from telegram.ext import Application
 
@@ -50,18 +49,32 @@ async def main():
 
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
+    # قائمة بجميع المعالجات لتسهيل الإدارة
     all_handlers = [
+        # معالجات المحادثة (يجب أن تأتي أولاً)
         add_reminder_conv_handler, import_reminders_conv_handler,
         change_timezone_conv_handler, add_channel_conversation_handler,
-        edit_texts_conversation_handler, channel_approval_tracker,
-        channel_decision_handler, admin_reply_handler, start_handler,
-        recheck_subscription_callback_handler, contact_admin_handler,
+        edit_texts_conversation_handler,
+        
+        # معالجات تتبع حالة البوت في القنوات
+        channel_approval_tracker,
+        
+        # معالجات الردود والتفاعلات
+        channel_decision_handler, admin_reply_handler,
+        
+        # معالجات المستخدم الرئيسية
+        start_handler, recheck_subscription_callback_handler, contact_admin_handler,
         show_date_handler, show_time_handler, show_reminder_handler,
+        
+        # معالجات لوحة تحكم المدير
         admin_handler, admin_panel_back_handler, reminders_panel_handler,
         view_all_reminders_handler, delete_reminder_handler,
         interface_menu_handler, subscription_menu_handler,
         view_channels_main_handler, delete_channel_main_handler,
-        edit_texts_menu_handler, message_forwarder_handler,
+        edit_texts_menu_handler,
+        
+        # معالج الرسائل العامة (يأتي في النهاية)
+        message_forwarder_handler,
     ]
     
     application.add_handlers(all_handlers)
@@ -70,12 +83,6 @@ async def main():
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception:
-        # --- هذا هو التعديل المهم ---
-        # بدلاً من طباعة رسالة عامة، سنطبع التقرير الكامل للخطأ
-        print("="*50)
-        print("حدث خطأ فادح أدى إلى توقف البوت. إليك التقرير الكامل:")
-        traceback.print_exc() # هذه هي وظيفة "الأشعة السينية"
-        print("="*50)
+    # هذا هو الإصلاح النهائي: نثق في معالج الإغلاق المدمج في المكتبة.
+    # لن نستخدم try...except هنا بعد الآن.
+    asyncio.run(main())
