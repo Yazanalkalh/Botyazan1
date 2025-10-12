@@ -7,7 +7,6 @@ from hijri_converter import Gregorian
 from babel.dates import format_date
 
 from bot.database.manager import db
-# سنستدعي وظيفة القائمة الرئيسية من ملف البدء
 from bot.handlers.user.start import show_main_menu
 
 # --- قاموس لترجمة أسماء المدن والمناطق الزمنية ---
@@ -16,15 +15,24 @@ CITY_TRANSLATIONS = {
     "Cairo": "القاهرة", "Dubai": "دبي", "Kuwait": "الكويت", "Qatar": "قطر",
 }
 
+# --- قائمة بأسماء الشهور الهجرية باللغة العربية ---
+HIJRI_MONTHS = (
+    "محرم", "صفر", "ربيع الأول", "ربيع الثاني", "جمادى الأولى", "جمادى الآخرة",
+    "رجب", "شعبان", "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
+)
+
 async def show_date(call: types.CallbackQuery):
-    """يعدل الرسالة لعرض التاريخ الهجري والميلادي."""
-    await call.answer() # لإخفاء علامة التحميل
+    """يعدل الرسالة لعرض التاريخ الهجري والميلادي باللغة العربية الصحيحة."""
+    await call.answer()
 
     today = datetime.now()
     hijri_date = Gregorian(today.year, today.month, today.day).to_hijri()
 
     day_name = format_date(today, "EEEE", locale="ar")
-    hijri_str = f"{hijri_date.day} {hijri_date.month_name()} {hijri_date.year} هجري"
+    # --- التصحيح: استخدام القائمة العربية بدلاً من الدالة الافتراضية ---
+    hijri_month_name = HIJRI_MONTHS[hijri_date.month - 1]
+    hijri_str = f"{hijri_date.day} {hijri_month_name} {hijri_date.year} هجري"
+    
     gregorian_month_name = format_date(today, "MMMM", locale="ar")
     gregorian_str = f"{today.day} {gregorian_month_name} {today.year} ميلادي"
 
@@ -34,7 +42,6 @@ async def show_date(call: types.CallbackQuery):
         f"**الموافق :** {gregorian_str}"
     )
     
-    # زر العودة
     back_button = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main_menu")
     )
@@ -82,7 +89,6 @@ async def show_reminder(call: types.CallbackQuery):
 async def back_to_main_menu_handler(call: types.CallbackQuery):
     """يعيد المستخدم إلى القائمة الرئيسية."""
     await call.answer()
-    # استدعاء وظيفة عرض القائمة الرئيسية لتعديل الرسالة
     await show_main_menu(message=call.message, edit_mode=True)
 
 
