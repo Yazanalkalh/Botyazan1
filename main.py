@@ -1,76 +1,59 @@
 # -*- coding: utf-8 -*-
-
 import asyncio
 import logging
-import threading
-import os
-from telegram import Update
-from telegram.ext import Application
-
-import web_server
-from config import TELEGRAM_TOKEN, MONGO_URI
+from flask import Flask
 from bot.database.manager import db
+from telegram.ext import Application, CommandHandler
 
-# --- استيراد معالجات المستخدم ---
-from bot.handlers.user.start import start_handler, check_subscription_handler
-from bot.handlers.user.callbacks import (
-    show_date_handler, show_time_handler, show_reminder_handler, contact_admin_handler
-)
-from bot.handlers.user.message_handler import message_forwarder_handler
-
-# --- استيراد معالجات المدير ---
-from bot.handlers.admin.main_panel import admin_command_handler, admin_panel_callback_handler
-from bot.handlers.admin.approval_handler import new_member_handler, channel_approval_handler
-from bot.handlers.admin.communication_handler import admin_reply_handler
-from bot.handlers.admin.reminders_handler import get_reminders_handlers
-from bot.handlers.admin.interface_handler import get_interface_handlers
-from bot.handlers.admin.subscription_handler import get_subscription_handlers
-from bot.handlers.admin.text_editor_handler import get_text_editor_handlers
-from bot.handlers.admin.publishing_handler import get_publishing_handlers # <-- إضافة جديدة
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+BOT_TOKEN = "YOUR_BOT_TOKEN"
+MONGO_URI = "YOUR_MONGO_URI"
 
-async def startup():
-    """الوظيفة الرئيسية لإعداد وتشغيل البوت."""
-    await db.connect_to_database(uri=MONGO_URI)
-    
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+# --- إنشاء تطبيق Flask ---
+flask_app = Flask(__name__)
 
-    # --- تجميع جميع المعالجات ---
-    handlers = [
-        start_handler, check_subscription_handler,
-        show_date_handler, show_time_handler, show_reminder_handler, contact_admin_handler,
-        admin_command_handler, admin_panel_callback_handler,
-        new_member_handler, channel_approval_handler, admin_reply_handler,
-        message_forwarder_handler
-    ]
-    handlers.extend(get_reminders_handlers())
-    handlers.extend(get_interface_handlers())
-    handlers.extend(get_subscription_handlers())
-    handlers.extend(get_text_editor_handlers())
-    handlers.extend(get_publishing_handlers()) # <-- إضافة جديدة
+@flask_app.route("/")
+def index():
+    return "خادم Flask يعمل!"
 
-    application.add_handlers(handlers)
-    logger.info("البوت قيد التشغيل...")
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+# --- وظيفة بدء التشغيل للبوت ---
+async def startup(application: Application):
+    await db.connect_to_database(MONGO_URI)
+    logger.info("قاعدة البيانات جاهزة!")
 
+# --- إعداد البوت ---
+application = Application.builder().token(BOT_TOKEN).build()
 
-if __name__ == '__main__':
-    if not (TELEGRAM_TOKEN and MONGO_URI):
-        logger.critical("لم يتم العثور على متغيرات البيئة الأساسية (TELEGRAM_TOKEN, MONGO_URI).")
-    else:
-        flask_thread = threading.Thread(target=web_server.run_flask)
-        flask_thread.daemon = True
-        flask_thread.start()
-        logger.info("خادم الويب Flask قيد التشغيل...")
+# مثال على أمر /start
+async def start_command(update, context):
+    await update.message.reply_text("مرحباً! البوت قيد التشغيل.")
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(startup())
-        else:
-            loop.run_until_complete(startup())
+application.add_handler(CommandHandler("start", start_command))
+
+# تنفيذ startup بعد تشغيل البوت
+application.post_init = startup
+
+# --- تشغيل Flask في مهمة منفصلة ---
+async def run_flask():
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+
+    config = Config()
+    config.bind = ["0.0.0.0:10000"]  # بورت Render
+    await serve(flask_app, config)
+
+# --- نقطة البداية ---
+async def main():
+    # تشغيل Flask في مهمة مستقلة
+    asyncio.create_task(run_flask())
+
+    # تشغيل البوت
+    await application.run_polling()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("تم إيقاف التطبيق.")
