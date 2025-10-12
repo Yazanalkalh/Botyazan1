@@ -24,7 +24,6 @@ async def copy_message_to_admin(message: types.Message):
         )
         
         # استخدام copy_message لإرسال نسخة من الرسالة مع التعليق
-        # هذا يعمل مع كل أنواع الرسائل (نص، صور، ملفات...)
         await message.copy_to(
             chat_id=ADMIN_USER_ID,
             caption=reply_info,
@@ -37,11 +36,10 @@ async def copy_message_to_admin(message: types.Message):
 
 def register_message_handlers(dp: Dispatcher):
     """
-    تسجيل معالج الرسائل ليلتقط كل أنواع الرسائل ما عدا الأوامر.
+    تسجيل معالج الرسائل ليلتقط كل أنواع الرسائل.
+    بما أنه يُسجل بعد معالج الأوامر، فإنه لن يلتقط الأوامر.
     """
     dp.register_message_handler(
         copy_message_to_admin, 
-        content_types=types.ContentTypes.ANY,
-        # التأكد من أنه لا يلتقط الأوامر مثل /start
-        is_command=False 
+        content_types=types.ContentTypes.ANY
     )
