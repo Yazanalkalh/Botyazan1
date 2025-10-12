@@ -1,19 +1,10 @@
 # -*- coding: utf-8 -*-
 
-# (الكود الكامل للملف موجود في ردود سابقة وهو صحيح، قم بلصقه هنا)
-# للتأكيد، هذا الملف يجب أن يحتوي على:
-# - reminders_panel_handler
-# - view_all_reminders_handler
-# - delete_reminder_handler
-# - add_reminder_conv_handler (ConversationHandler)
-# - import_reminders_conv_handler (ConversationHandler)
-# وتأكد من وجود زر "➕ إضافة المزيد" في وظيفة العرض.
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 )
 from bot.database.manager import add_reminder, get_all_reminders, delete_reminder
-from bson.objectid import ObjectId
 import io
 
 # --- States for ConversationHandler ---
@@ -51,7 +42,6 @@ async def view_all_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = "قائمة الأذكار المحفوظة:\n\n"
     keyboard = []
     for reminder in reminders:
-        # عرض جزء من النص فقط إذا كان طويلاً
         reminder_text_preview = reminder['text'][:40] + "..." if len(reminder['text']) > 40 else reminder['text']
         keyboard.append([
             InlineKeyboardButton(reminder_text_preview, callback_data=f"rem_noop_{reminder['_id']}"),
@@ -71,9 +61,7 @@ async def delete_reminder_callback(update: Update, context: ContextTypes.DEFAULT
     reminder_id = query.data.split("_")[2]
     await delete_reminder(reminder_id)
     
-    await query.edit_message_text("✅ تم حذف الذكر بنجاح.")
-    
-    # إعادة عرض القائمة المحدثة
+    # لا نعدل الرسالة هنا، بل نعيد استدعاء وظيفة العرض لتحديث القائمة
     await view_all_reminders(update, context)
 
 # --- Add Reminder Conversation ---
@@ -88,15 +76,17 @@ async def add_reminder_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def add_reminder_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reminder_text = update.message.text
     await add_reminder(reminder_text)
-    await update.message.reply_text("✅ تم إضافة الذكر بنجاح.")
     
-    # محاكاة ضغطة زر الرجوع للعودة إلى قائمة الأذكار
-    from unittest.mock import Mock
-    mock_query = Mock()
-    mock_query.message = update.message
-    mock_update = Mock()
-    mock_update.callback_query = mock_query
-    await reminders_panel(mock_update, context)
+    # --- الإصلاح ---
+    # بدلاً من محاكاة زر، نرسل القائمة الرئيسية مباشرة
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder_start")],
+        [InlineKeyboardButton("📂 استيراد من ملف", callback_data="import_reminders_start")],
+        [InlineKeyboardButton("👀 عرض جميع الأذكار", callback_data="view_all_reminders")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("✅ تم إضافة الذكر بنجاح.\n\nاختر إجراءً لإدارة الأذكار:", reply_markup=reply_markup)
 
     return ConversationHandler.END
 
@@ -124,7 +114,6 @@ async def import_reminders_receive(update: Update, context: ContextTypes.DEFAULT
     file = await context.bot.get_file(document.file_id)
     file_content = await file.download_as_bytearray()
     
-    # استخدام io.StringIO للتعامل مع المحتوى كنص
     text_stream = io.StringIO(file_content.decode('utf-8'))
     
     count = 0
@@ -134,14 +123,15 @@ async def import_reminders_receive(update: Update, context: ContextTypes.DEFAULT
             await add_reminder(reminder_text)
             count += 1
             
-    await update.message.reply_text(f"✅ تم استيراد {count} ذكر بنجاح.")
-    
-    from unittest.mock import Mock
-    mock_query = Mock()
-    mock_query.message = update.message
-    mock_update = Mock()
-    mock_update.callback_query = mock_query
-    await reminders_panel(mock_update, context)
+    # --- الإصلاح ---
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة ذكر جديد", callback_data="add_reminder_start")],
+        [InlineKeyboardButton("📂 استيراد من ملف", callback_data="import_reminders_start")],
+        [InlineKeyboardButton("👀 عرض جميع الأذكار", callback_data="view_all_reminders")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"✅ تم استيراد {count} ذكر بنجاح.\n\nاختر إجراءً لإدارة الأذكار:", reply_markup=reply_markup)
     
     return ConversationHandler.END
 
@@ -161,7 +151,8 @@ add_reminder_conv_handler = ConversationHandler(
     states={
         ADD_REMINDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_reminder_receive)]
     },
-    fallbacks=[CallbackQueryHandler(cancel_add_reminder, pattern="^cancel_add_reminder$")]
+    fallbacks=[CallbackQueryHandler(cancel_add_reminder, pattern="^cancel_add_reminder$")],
+    per_message=False
 )
 
 import_reminders_conv_handler = ConversationHandler(
@@ -169,5 +160,6 @@ import_reminders_conv_handler = ConversationHandler(
     states={
         IMPORT_REMINDERS: [MessageHandler(filters.Document.TXT, import_reminders_receive)]
     },
-    fallbacks=[CallbackQueryHandler(cancel_import_reminders, pattern="^cancel_import_reminders$")]
+    fallbacks=[CallbackQueryHandler(cancel_import_reminders, pattern="^cancel_import_reminders$")],
+    per_message=False
 )
