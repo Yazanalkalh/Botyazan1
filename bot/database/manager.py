@@ -18,7 +18,6 @@ class DatabaseManager:
             await self.client.admin.command("ping")
             self.db = self.client.get_database("IslamicBotDBAiogram")
             
-            # تهيئة المجموعات
             self.users_collection = self.db.users
             self.texts_collection = self.db.texts
             self.reminders_collection = self.db.reminders
@@ -33,8 +32,8 @@ class DatabaseManager:
             logger.error(f"فشل الاتصال بقاعدة البيانات: {e}")
             return False
 
+    # ... بقية الوظائف هنا تبقى كما هي ...
     async def initialize_defaults(self):
-        # ... الكود هنا يبقى كما هو ...
         if not self.is_connected(): return
         defaults = { "welcome_message": "أهلاً بك يا {user_mention}!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",}
         for key, value in defaults.items(): await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
@@ -42,7 +41,6 @@ class DatabaseManager:
         
     def is_connected(self) -> bool: return self.client is not None and self.db is not None
 
-    # --- وظائف الرد الذكي ---
     async def log_forwarded_message(self, admin_message_id: int, user_id: int, user_message_id: int):
         if not self.is_connected(): return
         await self.forwarding_map_collection.insert_one({"_id": admin_message_id, "user_id": user_id, "user_message_id": user_message_id})
@@ -51,7 +49,6 @@ class DatabaseManager:
         if not self.is_connected(): return None
         return await self.forwarding_map_collection.find_one({"_id": admin_message_id})
 
-    # --- بقية الوظائف ---
     async def add_user(self, user) -> bool:
         if not self.is_connected(): return False
         user_data = {'first_name': user.first_name or "", 'last_name': getattr(user, 'last_name', "") or "", 'username': user.username or ""}
