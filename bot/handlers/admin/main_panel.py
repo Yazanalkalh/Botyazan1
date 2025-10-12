@@ -1,37 +1,63 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
-from config import ADMIN_USER_ID
 
-async def get_admin_panel_markup() -> InlineKeyboardMarkup:
-    """ينشئ لوحة مفاتيح لوحة التحكم الرئيسية للمدير."""
+# --- تعريف لوحة التحكم الرئيسية ---
+async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, from_conversation: bool = False):
+    """يعرض لوحة تحكم المدير الرئيسية."""
+    
+    # تحديد المستخدم والرسالة بناءً على مصدر الاستدعاء
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        user = query.from_user
+        message_sender = query.edit_message_text
+    else: # from command or conversation end
+        user = update.effective_user
+        message_sender = update.effective_message.reply_text
+
+    admin_id = int(context.bot_data.get("ADMIN_USER_ID", 0))
+    if user.id != admin_id:
+        await message_sender("عذراً، هذه المنطقة مخصصة للمدير فقط.")
+        return
+
+    # حفظ معرّف المدير في بيانات المستخدم للمحادثات
+    context.user_data['admin_id'] = admin_id
+
     keyboard = [
         [
-            InlineKeyboardButton("🗓️ التذكيرات", callback_data="reminders_panel"),
+            InlineKeyboardButton("✍️ الردود التلقائية", callback_data="auto_replies_menu"),
+            InlineKeyboardButton("🗓️ التذكيرات", callback_data="reminders_panel")
+        ],
+        [
+            InlineKeyboardButton("📢 منشورات القناة", callback_data="publishing_menu"), # <-- الزر الجديد
+            InlineKeyboardButton("📨 تواصل مع المستخدمين", callback_data="communication_menu")
+        ],
+        [
+            InlineKeyboardButton("📊 الإحصائيات", callback_data="stats_menu"),
+            InlineKeyboardButton("🚫 إدارة الحظر", callback_data="ban_management_menu")
+        ],
+        [
+            InlineKeyboardButton("📣 نشر للجميع", callback_data="broadcast_menu"),
             InlineKeyboardButton("🎨 تخصيص الواجهة", callback_data="customize_interface")
         ],
         [
-            InlineKeyboardButton("🔐 الاشتراك الإجباري", callback_data="subscription_menu"),
-            InlineKeyboardButton("📝 تعديل النصوص", callback_data="edit_texts_menu")
+            InlineKeyboardButton("🛡️ الحماية والأمان", callback_data="security_menu"),
+            InlineKeyboardButton("🗂️ إدارة القنوات", callback_data="channels_menu")
         ],
+        [
+            InlineKeyboardButton("强制订阅", callback_data="subscription_menu"), # اشتراك إجباري
+            InlineKeyboardButton("✏️ تعديل النصوص", callback_data="edit_texts_menu")
+        ]
     ]
-    return InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """يعرض لوحة التحكم الرئيسية."""
-    user = update.effective_user
-    if str(user.id) != ADMIN_USER_ID:
-        return
+    await message_sender(
+        text="أهلاً بك في لوحة تحكم المدير. اختر أحد الخيارات:",
+        reply_markup=reply_markup
+    )
 
-    reply_markup = await get_admin_panel_markup()
-    
-    if update.message:
-        await update.message.reply_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
-    elif update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        await query.edit_message_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
-
+# --- المعالجات ---
 admin_command_handler = CommandHandler("admin", admin_panel_handler)
 admin_panel_callback_handler = CallbackQueryHandler(admin_panel_handler, pattern="^admin_panel_back$")
