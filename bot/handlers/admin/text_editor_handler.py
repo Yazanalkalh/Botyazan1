@@ -1,79 +1,102 @@
 # -*- coding: utf-8 -*-
 
+# (الكود الكامل للملف موجود في ردود سابقة وهو صحيح، قم بلصقه هنا)
+# للتأكيد، هذا الملف يجب أن يحتوي على:
+# - edit_texts_menu_handler
+# - edit_texts_conversation_handler (ConversationHandler)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import (
+    ContextTypes, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+)
+from bot.database.manager import get_text, set_text
 
-from bot.database.manager import get_setting, set_setting
+# --- States for ConversationHandler ---
+EDIT_TEXT = range(1)
 
-EDITING_WELCOME_MESSAGE, EDITING_DATE_BTN, EDITING_TIME_BTN, EDITING_REMINDER_BTN = range(4)
+# --- قائمة النصوص القابلة للتعديل ---
+EDITABLE_TEXTS = {
+    "welcome_message": "رسالة الترحيب",
+    "date_button": "نص زر التاريخ",
+    "time_button": "نص زر الساعة",
+    "reminder_button": "نص زر الأذكار",
+    "contact_button": "نص زر التواصل",
+    "sub_required_text": "رسالة طلب الاشتراك",
+    "sub_recheck_button": "نص زر التحقق من الاشتراك",
+    "contact_prompt": "رسالة طلب إرسال رسالة للإدارة"
+}
 
+# --- Menu Handler ---
 async def edit_texts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📝 تعديل رسالة الترحيب", callback_data="edit_welcome_msg")],
-        [InlineKeyboardButton("📅 تعديل نص زر التاريخ", callback_data="edit_date_btn")],
-        [InlineKeyboardButton("⏰ تعديل نص زر الساعة", callback_data="edit_time_btn")],
-        [InlineKeyboardButton("📿 تعديل نص زر الأذكار", callback_data="edit_reminder_btn")],
-        [InlineKeyboardButton("🔙 رجوع للوحة التحكم", callback_data="admin_panel_back")]
-    ]
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = []
+    for key, description in EDITABLE_TEXTS.items():
+        keyboard.append([InlineKeyboardButton(description, callback_data=f"edit_text_{key}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.callback_query.message.edit_text(
-        text="🖋️ قسم تعديل نصوص البوت.\n\nاختر النص الذي تريد تعديله.",
-        reply_markup=reply_markup
+    await query.edit_message_text(text="اختر النص الذي تريد تعديله:", reply_markup=reply_markup)
+
+# --- Edit Text Conversation ---
+async def edit_text_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    text_id = query.data.split("_")[2]
+    context.user_data['text_to_edit'] = text_id
+    
+    current_text = await get_text(text_id, " (لا يوجد نص محدد حالياً)")
+
+    text_description = EDITABLE_TEXTS.get(text_id, "نص غير معروف")
+    
+    prompt = (
+        f"📝 **تعديل: {text_description}**\n\n"
+        f"**النص الحالي:**\n`{current_text}`\n\n"
+        f"أرسل الآن النص الجديد. يمكنك استخدام `{user}` ليتم استبداله باسم المستخدم في رسالة الترحيب."
     )
+    keyboard = [[InlineKeyboardButton("🔙 إلغاء", callback_data="cancel_edit_text")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text=prompt, reply_markup=reply_markup, parse_mode='Markdown')
+    return EDIT_TEXT
 
-async def request_new_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text_key: str, description: str, state: int):
-    current_text = get_setting(text_key, f"({description} الافتراضي)")
-    await update.callback_query.message.edit_text(
-        text=f"النص الحالي لـ'{description}':\n\n`{current_text}`\n\nأرسل الآن النص الجديد.\n\nملاحظة: يمكنك استخدام `{{user_mention}}` ليتم استبداله بمنشن المستخدم في رسالة الترحيب.",
-        parse_mode='Markdown'
-    )
-    return state
-
-async def request_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await request_new_text(update, context, "text_welcome", "رسالة الترحيب", EDITING_WELCOME_MESSAGE)
-
-async def request_date_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await request_new_text(update, context, "btn_date", "زر التاريخ", EDITING_DATE_BTN)
-
-async def request_time_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await request_new_text(update, context, "btn_time", "زر الساعة", EDITING_TIME_BTN)
-
-async def request_reminder_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await request_new_text(update, context, "btn_reminder", "زر الأذكار", EDITING_REMINDER_BTN)
-
-async def save_new_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text_key: str, description: str):
+async def edit_text_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_text = update.message.text
-    set_setting(text_key, new_text)
-    await update.message.reply_text(f"✅ تم تحديث نص '{description}' بنجاح.")
-    await update.message.reply_text("اضغط /admin للعودة إلى لوحة التحكم.")
+    text_id = context.user_data.get('text_to_edit')
+    
+    if not text_id:
+        # Should not happen in a conversation
+        await update.message.reply_text("حدث خطأ. يرجى المحاولة مرة أخرى.")
+        return ConversationHandler.END
+
+    await set_text(text_id, new_text)
+    await update.message.reply_text("✅ تم تحديث النص بنجاح.")
+    
+    del context.user_data['text_to_edit']
+    
+    from unittest.mock import Mock
+    mock_query = Mock()
+    mock_query.message = update.message
+    mock_update = Mock()
+    mock_update.callback_query = mock_query
+    await edit_texts_menu(mock_update, context)
+
     return ConversationHandler.END
 
-async def save_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await save_new_text(update, context, "text_welcome", "رسالة الترحيب")
+async def cancel_edit_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if 'text_to_edit' in context.user_data:
+        del context.user_data['text_to_edit']
+    await query.answer()
+    await edit_texts_menu(update, context)
+    return ConversationHandler.END
 
-async def save_date_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await save_new_text(update, context, "btn_date", "زر التاريخ")
-
-async def save_time_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await save_new_text(update, context, "btn_time", "زر الساعة")
-
-async def save_reminder_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await save_new_text(update, context, "btn_reminder", "زر الأذكار")
-
-edit_texts_menu_handler = CallbackQueryHandler(edit_texts_menu, pattern="^edit_texts_menu$")
+# --- Handlers Definition ---
+edit_texts_menu_handler = CallbackQueryHandler(edit_texts_menu, pattern="^edit_texts_panel$")
 
 edit_texts_conversation_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(request_welcome_message, pattern="^edit_welcome_msg$"),
-        CallbackQueryHandler(request_date_button, pattern="^edit_date_btn$"),
-        CallbackQueryHandler(request_time_button, pattern="^edit_time_btn$"),
-        CallbackQueryHandler(request_reminder_button, pattern="^edit_reminder_btn$"),
-    ],
+    entry_points=[CallbackQueryHandler(edit_text_start, pattern="^edit_text_")],
     states={
-        EDITING_WELCOME_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_welcome_message)],
-        EDITING_DATE_BTN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_date_button)],
-        EDITING_TIME_BTN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_time_button)],
-        EDITING_REMINDER_BTN: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_reminder_button)],
+        EDIT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_text_receive)]
     },
-    fallbacks=[]
-  )
+    fallbacks=[CallbackQueryHandler(cancel_edit_text, pattern="^cancel_edit_text$")]
+)
