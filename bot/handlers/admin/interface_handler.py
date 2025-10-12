@@ -6,6 +6,8 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 )
 from bot.database.manager import db
+# --- سطر الاستدعاء المفقود ---
+from bot.handlers.admin.main_panel import admin_panel_handler
 
 TIMEZONE_ALIASES = {
     "sanaa": "Asia/Aden", "صنعاء": "Asia/Aden", "aden": "Asia/Aden", "عدن": "Asia/Aden",
@@ -50,11 +52,7 @@ async def handle_timezone_input(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='MarkdownV2'
         )
         # العودة إلى قائمة تخصيص الواجهة
-        keyboard = [
-            [InlineKeyboardButton("🌍 تغيير المنطقة الزمنية", callback_data="change_timezone")],
-            [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")],
-        ]
-        await update.message.reply_text(text="اختر الإعداد الذي تريد تعديله:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await interface_menu_func(update.callback_query or update, context) # تحديث للعودة
         return ConversationHandler.END
     except pytz.UnknownTimeZoneError:
         await update.message.reply_text(
@@ -70,16 +68,12 @@ def get_interface_handlers():
         },
         fallbacks=[],
         per_message=False,
-        map_to_parent={
-            ConversationHandler.END: SELECTING_ACTION
-        }
+        map_to_parent={ ConversationHandler.END: SELECTING_ACTION }
     )
     
     main_menu_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(interface_menu_func, pattern="^customize_interface$")],
-        states={
-            SELECTING_ACTION: [change_timezone_conv]
-        },
+        states={ SELECTING_ACTION: [change_timezone_conv] },
         fallbacks=[CallbackQueryHandler(admin_panel_handler, pattern="^admin_panel_back$")],
         per_message=False
     )
