@@ -1,5 +1,6 @@
 aiogram==2.25.2
 pymongo
+motor
 dnspython
 python-dotenv
 Flask==2.2.2
