@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -8,14 +9,17 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.constants import ParseMode
+from datetime import datetime
+import pytz
 
 from bot.database.manager import db
 
+# إعداد اللوجر
+logger = logging.getLogger(__name__)
+
 # --- تعريف حالات المحادثة ---
-# Awaiting the main content of the post (text, photo, video, etc.)
-RECEIVING_CONTENT = 1
-# Awaiting the inline buttons for the post
-RECEIVING_BUTTONS = 2
+RECEIVING_CONTENT, RECEIVING_BUTTONS, SELECTING_CHANNELS, AWAITING_SCHEDULE_TIME = range(4)
 
 # --- وظائف المحادثة ---
 
@@ -23,71 +27,46 @@ async def new_post_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """تبدأ محادثة إنشاء منشور جديد."""
     query = update.callback_query
     await query.answer()
-    
-    # حذف أي منشورات مؤقتة قديمة للمدير
-    await db.delete_temp_post(context.user_data.get('admin_id'))
+    admin_id = query.from_user.id
+    context.user_data['admin_id'] = admin_id
+    await db.delete_temp_post(admin_id)
 
     await query.edit_message_text(
-        text="✍️ **إنشاء منشور جديد**\n\n"
-             "أرسل الآن المحتوى الذي تريد نشره.\n"
-             "يمكن أن يكون (نص، صورة مع تعليق، فيديو، ملف...)."
+        text="✍️ **إنشاء منشور جديد**\n\nأرسل الآن المحتوى الذي تريد نشره.",
+        parse_mode=ParseMode.MARKDOWN_V2
     )
     return RECEIVING_CONTENT
 
-
 async def receive_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """تستقبل محتوى المنشور وتحفظه مؤقتاً في قاعدة البيانات."""
+    """تستقبل محتوى المنشور وتحفظه مؤقتاً."""
     admin_id = update.message.from_user.id
-    
-    # حفظ الرسالة بالكامل كما هي
-    # هذا يسمح لنا بإعادة إرسالها لاحقاً بنفس التنسيق (صورة مع نص، إلخ)
     await db.save_temp_post(admin_id, update.message)
 
     keyboard = [
         [InlineKeyboardButton("✅ نعم، أضف أزرار", callback_data="add_buttons")],
-        [InlineKeyboardButton("⏩ تخطّ، لا أريد أزرار", callback_data="skip_buttons")],
+        [InlineKeyboardButton("⏩ تخطّ", callback_data="skip_buttons")],
         [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_post")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text(
-        "✅ تم حفظ المحتوى بنجاح.\n\n"
-        "هل تريد إضافة أزرار تفاعلية (Inline Buttons) لهذا المنشور؟",
-        reply_markup=reply_markup
+        "✅ تم حفظ المحتوى.\n\nهل تريد إضافة أزرار تفاعلية؟",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return RECEIVING_BUTTONS
-
 
 async def request_buttons_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """تطلب من المدير إرسال الأزرار بالتنسيق الصحيح."""
+    """تطلب من المدير إرسال الأزرار."""
     query = update.callback_query
     await query.answer()
-
     await query.edit_message_text(
-        text="يرجى إرسال الأزرار الآن.\n\n"
-             "**التنسيق المطلوب:**\n"
-             "كل سطر يحتوي على زر واحد أو أكثر.\n"
-             "`النص الظاهر على الزر - رابط URL`\n\n"
-             "**مثال لسطر واحد بزرين:**\n"
-             "`زر 1 - google.com | زر 2 - youtube.com`\n\n"
-             "**مثال لسطرين، كل سطر بزر واحد:**\n"
-             "`القناة الأولى - t.me/channel1`\n"
-             "`الموقع الرسمي - example.com`\n\n"
-             "لإلغاء إضافة الأزرار، أرسل /cancel.",
-        parse_mode='Markdown'
+        text="يرجى إرسال الأزرار الآن بالتنسيق التالي:\n`النص - الرابط`\n`زر آخر - رابط آخر`\n\nلفصل الأزرار في نفس السطر، استخدم `|`\n`زر1 - رابط1 | زر2 - رابط2`",
+        parse_mode=ParseMode.MARKDOWN
     )
     return RECEIVING_BUTTONS
 
-
 async def receive_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    تستقبل نص الأزرار، تحلله، وتحفظه في قاعدة البيانات.
-    بعد هذه الخطوة، ننتقل إلى المرحلة التالية (اختيار القنوات والجدولة).
-    """
+    """تستقبل الأزرار وتحللها."""
     admin_id = update.message.from_user.id
     button_text = update.message.text
-
-    # --- تحليل الأزرار ---
     parsed_buttons = []
     try:
         rows = button_text.strip().split('\n')
@@ -97,107 +76,143 @@ async def receive_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             for button_str in buttons_in_row:
                 parts = button_str.split('-', 1)
                 if len(parts) == 2:
-                    text = parts[0].strip()
-                    url = parts[1].strip()
-                    # إضافة http تلقائياً إذا لم يكن موجوداً
+                    text, url = parts[0].strip(), parts[1].strip()
                     if not url.startswith(('http://', 'https://', 't.me/')):
                         url = 'http://' + url
                     row_buttons.append({'text': text, 'url': url})
             if row_buttons:
                 parsed_buttons.append(row_buttons)
     except Exception as e:
-        await update.message.reply_text(
-            f"حدث خطأ أثناء تحليل الأزرار: {e}\n"
-            "يرجى التأكد من اتباع التنسيق الصحيح والمحاولة مرة أخرى، أو أرسل /cancel للإلغاء."
-        )
+        await update.message.reply_text(f"حدث خطأ: {e}\nيرجى المحاولة مرة أخرى.")
         return RECEIVING_BUTTONS
 
     if not parsed_buttons:
-        await update.message.reply_text(
-            "لم أتمكن من تحليل أي أزرار. يرجى التأكد من التنسيق:\n"
-            "`النص - الرابط`\n\n"
-            "أو أرسل /cancel للإلغاء."
-        )
+        await update.message.reply_text("لم أتمكن من تحليل أي أزرار. يرجى التأكد من التنسيق.")
         return RECEIVING_BUTTONS
 
-    # حفظ الأزرار المحللة في قاعدة البيانات
     await db.update_temp_post_buttons(admin_id, parsed_buttons)
-    
-    await update.message.reply_text(
-        "✅ تم إضافة الأزرار بنجاح!\n\n"
-        "المنشور الآن جاهز بالكامل. المرحلة التالية هي اختيار القنوات وتحديد وقت النشر."
-    )
-    
-    # --- هنا سنقوم لاحقاً باستدعاء وظيفة المرحلة التالية ---
-    # preview_and_select_channels(update, context)
-    
-    return ConversationHandler.END
-
+    await update.message.reply_text("✅ تم إضافة الأزرار بنجاح.")
+    return await preview_and_select_channels(update, context)
 
 async def post_creation_finished(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    يتم استدعاؤها عند تخطي إضافة الأزرار.
-    المنشور الآن جاهز بدون أزرار.
-    """
+    """يتم استدعاؤها عند تخطي إضافة الأزرار."""
     query = update.callback_query
     await query.answer()
+    return await preview_and_select_channels(update, context)
 
-    await query.edit_message_text(
-        text="✅ تم إعداد المنشور بنجاح (بدون أزرار).\n\n"
-             "المرحلة التالية هي اختيار القنوات وتحديد وقت النشر."
+async def preview_and_select_channels(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """تعرض معاينة للمنشور وتطلب اختيار القنوات."""
+    admin_id = context.user_data.get('admin_id')
+    temp_post = await db.get_temp_post(admin_id)
+
+    if not temp_post:
+        await update.effective_message.reply_text("حدث خطأ، لم أجد المنشور المؤقت.")
+        return ConversationHandler.END
+
+    message_data = temp_post.get("post_data")
+    buttons = temp_post.get("buttons", [])
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(**btn) for btn in row] for row in buttons]) if buttons else None
+
+    # إرسال المعاينة
+    await context.bot.copy_message(
+        chat_id=admin_id,
+        from_chat_id=message_data['chat']['id'],
+        message_id=message_data['message_id'],
+        reply_markup=reply_markup
     )
     
-    # --- هنا سنقوم لاحقاً باستدعاء وظيفة المرحلة التالية ---
-    # preview_and_select_channels(update, context)
+    # عرض قائمة القنوات
+    channels = await db.get_all_approved_channels()
+    if not channels:
+        await update.effective_message.reply_text("لم يتم العثور على أي قنوات معتمدة للنشر. يرجى إضافة البوت كمشرف في قناة أولاً والموافقة عليها.")
+        return ConversationHandler.END
+
+    keyboard = [[InlineKeyboardButton(ch['title'], callback_data=f"select_channel_{ch['channel_id']}")] for ch in channels]
+    keyboard.append([InlineKeyboardButton("📢 النشر في جميع القنوات", callback_data="select_channel_all")])
+    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="cancel_post")])
+
+    await update.effective_message.reply_text(
+        "تم إعداد المنشور. اختر القناة التي تريد النشر فيها:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return SELECTING_CHANNELS
+
+async def channel_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """تعالج اختيار قناة النشر."""
+    query = update.callback_query
+    await query.answer()
     
+    channel_info = query.data.replace("select_channel_", "")
+    context.user_data['target_channels'] = [int(channel_info)] if channel_info != "all" else "all"
+
+    keyboard = [
+        [InlineKeyboardButton("🚀 النشر الآن", callback_data="publish_now")],
+        [InlineKeyboardButton("⏰ جدولة النشر", callback_data="schedule_post")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_post_creation")],
+    ]
+    await query.edit_message_text("اختر وقت النشر:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return AWAITING_SCHEDULE_TIME
+
+async def publish_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """تقوم بنشر الرسالة فوراً."""
+    query = update.callback_query
+    await query.answer()
+    admin_id = context.user_data.get('admin_id')
+    target_channels = context.user_data.get('target_channels')
+    
+    # منطق النشر الفعلي سيتم إضافته هنا
+    
+    await query.edit_message_text("تم استلام أمر النشر الفوري. (سيتم تنفيذ النشر قريباً)")
+    await db.delete_temp_post(admin_id)
     return ConversationHandler.END
 
+async def request_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """تطلب من المدير إرسال وقت الجدولة."""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("أرسل وقت وتاريخ النشر.\nمثال: `25-12-2025 09:30`")
+    return AWAITING_SCHEDULE_TIME
+
+async def receive_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """تستقبل وقت الجدولة وتحفظ المنشور."""
+    time_str = update.message.text
+    
+    # منطق التحقق من الوقت وحفظ المنشور المجدول سيتم إضافته هنا
+    
+    await update.message.reply_text(f"تم استلام وقت الجدولة: {time_str}. (سيتم تنفيذ الجدولة قريباً)")
+    admin_id = context.user_data.get('admin_id')
+    await db.delete_temp_post(admin_id)
+    return ConversationHandler.END
 
 async def cancel_post_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """تلغي عملية إنشاء المنشور وتحذف البيانات المؤقتة."""
-    # تحديد مصدر الإلغاء (من زر أو من أمر نصي)
-    if update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        admin_id = query.from_user.id
-        message_sender = query.edit_message_text
-    else: # if called from a message command like /cancel
-        admin_id = update.message.from_user.id
-        message_sender = update.message.reply_text
-
-    # حذف المنشور المؤقت من قاعدة البيانات
+    """تلغي العملية."""
+    query = update.callback_query
+    await query.answer()
+    admin_id = context.user_data.get('admin_id')
     await db.delete_temp_post(admin_id)
-
-    await message_sender(
-        text="تم إلغاء عملية إنشاء المنشور بنجاح.",
-        reply_markup=None # Ensure any inline keyboards are removed
-    )
-    # لا نعود إلى لوحة التحكم الرئيسية تلقائياً، لكي لا تكون مربكة
+    await query.edit_message_text("تم إلغاء النشر.")
     return ConversationHandler.END
-
 
 def get_publishing_handlers() -> list:
     """تُرجع قائمة بالمعالجات الخاصة بنظام النشر."""
-    
-    publishing_conv_handler = ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_post_start, pattern="^new_post$")],
         states={
-            RECEIVING_CONTENT: [
-                MessageHandler(filters.ALL & ~filters.COMMAND, receive_content)
-            ],
+            RECEIVING_CONTENT: [MessageHandler(filters.ALL & ~filters.COMMAND, receive_content)],
             RECEIVING_BUTTONS: [
                 CallbackQueryHandler(request_buttons_input, pattern="^add_buttons$"),
                 CallbackQueryHandler(post_creation_finished, pattern="^skip_buttons$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_buttons),
             ],
+            SELECTING_CHANNELS: [CallbackQueryHandler(channel_selected, pattern="^select_channel_")],
+            AWAITING_SCHEDULE_TIME: [
+                CallbackQueryHandler(publish_now, pattern="^publish_now$"),
+                CallbackQueryHandler(request_schedule_time, pattern="^schedule_post$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_schedule_time),
+                CallbackQueryHandler(new_post_start, pattern="^back_to_post_creation$"), # Simplified back action
+            ],
         },
-        fallbacks=[
-            CallbackQueryHandler(cancel_post_creation, pattern="^cancel_post$"),
-            CommandHandler("cancel", cancel_post_creation)
-        ],
+        fallbacks=[CallbackQueryHandler(cancel_post_creation, pattern="^cancel_post$")],
         per_message=False,
-        # إذا انتهت المحادثة بشكل غير متوقع، نلغيها
-        conversation_timeout=300  # 5 minutes
     )
-
-    return [publishing_conv_handler]
+    return [conv_handler]
