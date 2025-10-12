@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import asyncio
-import signal
 from telegram import Update
 from telegram.ext import Application
 
@@ -36,20 +34,8 @@ from bot.handlers.admin.text_editor_handler import (
     edit_texts_menu_handler, edit_texts_conversation_handler
 )
 
-# --- نظام الإيقاف الآمن والاحترافي ---
-async def shutdown(application: Application, loop: asyncio.AbstractEventLoop):
-    """إيقاف البوت بأمان."""
-    print("بدء عملية إيقاف البوت بأمان...")
-    await application.shutdown()
-    # نوقف المهام المتبقية ونلغيها
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    [task.cancel() for task in tasks]
-    await asyncio.gather(*tasks, return_exceptions=True)
-    loop.stop()
-    print("تم إيقاف البوت بنجاح.")
-
 def main():
-    """نقطة انطلاق البوت الرئيسية مع معالجة الإيقاف الآمن."""
+    """نقطة انطلاق البوت الرئيسية."""
     if db_connection is None:
         print("فشل الاتصال بقاعدة البيانات. لا يمكن تشغيل البوت.")
         return
@@ -58,6 +44,7 @@ def main():
         print("يرجى التأكد من إعداد التوكن ومعرف المدير.")
         return
 
+    # --- بناء التطبيق ---
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # --- إضافة جميع المعالجات ---
@@ -76,35 +63,10 @@ def main():
     ]
     application.add_handlers(all_handlers)
 
-    # --- إعداد حلقة الحدث ونظام الإيقاف ---
-    loop = asyncio.get_event_loop()
-    
-    # إعداد مستمع لإشارة الإيقاف من Render (SIGTERM)
-    loop.add_signal_handler(
-        signal.SIGTERM,
-        lambda: asyncio.create_task(shutdown(application, loop))
-    )
-    # إعداد مستمع لإشارة الإيقاف من الكيبورد (Ctrl+C)
-    loop.add_signal_handler(
-        signal.SIGINT,
-        lambda: asyncio.create_task(shutdown(application, loop))
-    )
-
-    # --- تشغيل البوت ---
-    try:
-        print("البوت قيد التشغيل... اضغط Ctrl+C للإيقاف.")
-        loop.run_until_complete(application.initialize())
-        loop.run_until_complete(application.start())
-        # هذا سيبقي البوت يعمل إلى الأبد حتى تأتي إشارة الإيقاف
-        loop.run_forever()
-    except KeyboardInterrupt:
-        # هذا الجزء للتعامل مع Ctrl+C إذا لم يعمل المستمع
-        pass
-    finally:
-        # التأكد من أن الحلقة أغلقت بشكل صحيح
-        if loop.is_running():
-            loop.run_until_complete(shutdown(application, loop))
-        loop.close()
+    # --- تشغيل البوت بالطريقة القياسية ---
+    # هذه الدالة ستبقي البوت يعمل وتتعامل مع الإيقاف الآمن تلقائياً.
+    print("البوت قيد التشغيل...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
