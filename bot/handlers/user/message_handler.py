@@ -24,9 +24,11 @@ async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
 
     # رسالة تعريفية بالمرسل
-    user_info = f"📩 رسالة جديدة من المستخدم:\n"
-    user_info += f"👤 **الاسم:** {user.full_name}\n"
-    user_info += f"🆔 **المعرف:** `{user.id}`"
+    user_info = (
+        f"📩 رسالة جديدة من المستخدم:\n\n"
+        f"👤 **الاسم:** {user.full_name}\n"
+        f"🆔 **المعرف:** `{user.id}`"
+    )
     if user.username:
         user_info += f"\n🔗 **اليوزر:** @{user.username}"
 
@@ -35,5 +37,5 @@ async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # إعادة توجيه الرسالة الأصلية للمدير
     await message.forward(chat_id=ADMIN_USER_ID)
 
-# المعالج يستمع لجميع أنواع الرسائل (نص، صورة، فيديو، الخ) التي ليست أوامر
+# المعالج يستمع لجميع أنواع الرسائل التي ليست أوامر
 message_forwarder_handler = MessageHandler(filters.ALL & ~filters.COMMAND, forward_to_admin)
