@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# (الكود الكامل للملف موجود في ردود سابقة وهو صحيح، قم بلصقه هنا)
-# للتأكيد، هذا الملف يجب أن يحتوي على:
-# - subscription_menu_handler
-# - view_channels_main_handler
-# - delete_channel_main_handler
-# - add_channel_conversation_handler (ConversationHandler)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
@@ -35,7 +29,10 @@ async def view_channels_main(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     channels = await get_subscription_channels()
     if not channels:
-        keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="subscription_panel")]]
+        keyboard = [
+             [InlineKeyboardButton("➕ إضافة قناة جديدة", callback_data="add_sub_channel_start")],
+             [InlineKeyboardButton("🔙 رجوع", callback_data="subscription_panel")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("لا توجد قنوات اشتراك إجباري حالياً.", reply_markup=reply_markup)
         return
@@ -47,6 +44,7 @@ async def view_channels_main(update: Update, context: ContextTypes.DEFAULT_TYPE)
             InlineKeyboardButton(channel['title'], url=channel['link']),
             InlineKeyboardButton("🗑️ حذف", callback_data=f"delete_sub_channel_{channel['_id']}")]
         )
+    keyboard.append([InlineKeyboardButton("➕ إضافة قناة جديدة", callback_data="add_sub_channel_start")])
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="subscription_panel")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
@@ -65,37 +63,28 @@ async def add_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🔙 إلغاء", callback_data="cancel_add_sub_channel")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        "**الخطوة 1 من 2:**\n\n"
-        "أضف البوت كمشرف في قناتك أولاً.\n"
-        "ثم أرسل لي معرف القناة (Channel ID). يجب أن يبدأ بـ `-100`.",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        "**الخطوة 1 من 2:**\n\nأرسل لي معرف القناة (Channel ID).",
+        reply_markup=reply_markup, parse_mode='Markdown'
     )
     return ADD_CHANNEL_ID
 
 async def add_channel_id_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         channel_id = int(update.message.text.strip())
-        if not str(channel_id).startswith("-100"):
-            raise ValueError
-        
-        # حاول جلب معلومات القناة للتأكد من أن البوت مشرف
         chat = await context.bot.get_chat(channel_id)
         context.user_data['new_sub_channel_id'] = channel_id
         context.user_data['new_sub_channel_title'] = chat.title
 
         await update.message.reply_text(
-            f"**الخطوة 2 من 2:**\n\n"
-            f"تم التعرف على القناة: **{chat.title}**\n"
-            f"الآن أرسل رابط الدعوة الخاص بالقناة.",
+            f"**الخطوة 2 من 2:**\nالآن أرسل رابط الدعوة الخاص بالقناة.",
             parse_mode='Markdown'
         )
         return ADD_CHANNEL_LINK
     except ValueError:
-        await update.message.reply_text("المعرف غير صالح. يجب أن يكون رقماً ويبدأ بـ -100. حاول مرة أخرى.")
+        await update.message.reply_text("المعرف غير صالح. حاول مرة أخرى.")
         return ADD_CHANNEL_ID
     except Exception as e:
-        await update.message.reply_text(f"لم أتمكن من الوصول للقناة. تأكد من أن البوت مشرف فيها وأن المعرف صحيح.\nالخطأ: {e}")
+        await update.message.reply_text(f"لم أتمكن من الوصول للقناة. تأكد أن البوت مشرف.\nالخطأ: {e}")
         return ADD_CHANNEL_ID
 
 async def add_channel_link_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,24 +93,23 @@ async def add_channel_link_receive(update: Update, context: ContextTypes.DEFAULT
     channel_title = context.user_data['new_sub_channel_title']
 
     await add_subscription_channel(channel_id, channel_title, channel_link)
-    await update.message.reply_text("✅ تم إضافة قناة الاشتراك الإجباري بنجاح.")
+    
+    # --- الإصلاح ---
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة قناة جديدة", callback_data="add_sub_channel_start")],
+        [InlineKeyboardButton("👀 عرض القنوات الحالية", callback_data="view_sub_channels")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel_back")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("✅ تم إضافة القناة بنجاح.\n\nإدارة قنوات الاشتراك الإجباري:", reply_markup=reply_markup)
 
-    # clean up user_data
-    del context.user_data['new_sub_channel_id']
-    del context.user_data['new_sub_channel_title']
-
-    from unittest.mock import Mock
-    mock_query = Mock()
-    mock_query.message = update.message
-    mock_update = Mock()
-    mock_update.callback_query = mock_query
-    await subscription_menu(mock_update, context)
+    context.user_data.clear()
     return ConversationHandler.END
-
 
 async def cancel_add_sub_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    context.user_data.clear()
     await subscription_menu(update, context)
     return ConversationHandler.END
 
@@ -136,5 +124,6 @@ add_channel_conversation_handler = ConversationHandler(
         ADD_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_id_receive)],
         ADD_CHANNEL_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_link_receive)]
     },
-    fallbacks=[CallbackQueryHandler(cancel_add_sub_channel, pattern="^cancel_add_sub_channel$")]
+    fallbacks=[CallbackQueryHandler(cancel_add_sub_channel, pattern="^cancel_add_sub_channel$")],
+    per_message=False
 )
