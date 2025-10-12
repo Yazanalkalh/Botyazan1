@@ -26,7 +26,7 @@ from bot.handlers.admin.reminders_handler import get_reminders_handlers
 from bot.handlers.admin.interface_handler import get_interface_handlers
 from bot.handlers.admin.subscription_handler import get_subscription_handlers
 from bot.handlers.admin.text_editor_handler import get_text_editor_handlers
-from bot.handlers.admin.publishing_handler import get_publishing_handlers
+from bot.handlers.admin.publishing_handler import get_publishing_handlers # <-- إضافة جديدة
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -37,11 +37,8 @@ logger = logging.getLogger(__name__)
 
 async def startup():
     """الوظيفة الرئيسية لإعداد وتشغيل البوت."""
-    
-    # 1. الاتصال بقاعدة البيانات
     await db.connect_to_database(uri=MONGO_URI)
     
-    # 2. إنشاء تطبيق Telegram
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # --- تجميع جميع المعالجات ---
@@ -56,7 +53,7 @@ async def startup():
     handlers.extend(get_interface_handlers())
     handlers.extend(get_subscription_handlers())
     handlers.extend(get_text_editor_handlers())
-    handlers.extend(get_publishing_handlers())
+    handlers.extend(get_publishing_handlers()) # <-- إضافة جديدة
 
     application.add_handlers(handlers)
     logger.info("البوت قيد التشغيل...")
@@ -67,18 +64,13 @@ if __name__ == '__main__':
     if not (TELEGRAM_TOKEN and MONGO_URI):
         logger.critical("لم يتم العثور على متغيرات البيئة الأساسية (TELEGRAM_TOKEN, MONGO_URI).")
     else:
-        # 1. تشغيل Flask في الخلفية
         flask_thread = threading.Thread(target=web_server.run_flask)
         flask_thread.daemon = True
         flask_thread.start()
         logger.info("خادم الويب Flask قيد التشغيل...")
 
-        # 2. تشغيل البوت باستخدام الـ event loop الحالي
-        # هذا هو التصحيح النهائي لمشكلة RuntimeError
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            logger.info("الـ Event loop يعمل بالفعل. جدولة مهمة البوت...")
             loop.create_task(startup())
         else:
-            logger.info("بدء تشغيل event loop جديد...")
             loop.run_until_complete(startup())
