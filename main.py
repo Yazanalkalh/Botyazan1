@@ -14,7 +14,7 @@ from bot.database.manager import db
 
 # --- استيراد معالجات البوت ---
 # استيراد معالجات المستخدم
-from bot.handlers.user.start import start_handler, check_subscription_handler # <-- التصحيح: إضافة المعالج الجديد
+from bot.handlers.user.start import start_handler, check_subscription_handler
 from bot.handlers.user.callbacks import show_date_handler, show_time_handler, show_reminder_handler, contact_admin_handler
 from bot.handlers.user.message_handler import message_forwarder_handler
 
@@ -38,18 +38,17 @@ async def main() -> None:
     """الوظيفة الرئيسية لإعداد وتشغيل البوت."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # --- إضافة جميع المعالجات ---
+    # --- إضافة جميع المعالجات بالترتيب الصحيح ---
     handlers = [
         # معالجات المستخدم
         start_handler,
-        check_subscription_handler, # <-- التصحيح: تسجيل المعالج الجديد
+        check_subscription_handler,
         show_date_handler,
         show_time_handler,
         show_reminder_handler,
         contact_admin_handler,
-        message_forwarder_handler,
-
-        # معالجات المدير
+        
+        # معالجات المدير (يجب أن تكون بعضها قبل معالج الرسائل العام)
         admin_handler,
         admin_panel_back_handler,
         reminders_panel_callback,
@@ -71,7 +70,10 @@ async def main() -> None:
         add_channel_conversation_handler,
         subscription_page_handler,
         delete_subscription_channel_handler,
-        edit_texts_conversation_handler
+        edit_texts_conversation_handler,
+
+        # معالج الرسائل العام يجب أن يكون في النهاية
+        message_forwarder_handler
     ]
     application.add_handlers(handlers)
 
@@ -80,7 +82,6 @@ async def main() -> None:
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    # الاتصال بقاعدة البيانات
     mongo_uri = os.getenv("MONGO_URI")
     if not mongo_uri:
         logger.error("لم يتم العثور على متغير البيئة MONGO_URI.")
@@ -93,10 +94,11 @@ if __name__ == '__main__':
 
         # 2. تشغيل البوت
         loop = asyncio.get_event_loop()
-        if not loop.is_running():
+        if loop.is_running():
+             # إذا كان الـ loop يعمل بالفعل (في بعض البيئات مثل notebooks)
+            task = loop.create_task(db.connect_to_database(uri=mongo_uri))
+            task.add_done_callback(lambda t: loop.create_task(main()))
+        else:
+            # التشغيل القياسي
             loop.run_until_complete(db.connect_to_database(uri=mongo_uri))
             loop.run_until_complete(main())
-        else:
-            # هذا المسار للحالات التي يكون فيها الـ loop يعمل بالفعل
-            asyncio.ensure_future(db.connect_to_database(uri=mongo_uri))
-            asyncio.ensure_future(main())
