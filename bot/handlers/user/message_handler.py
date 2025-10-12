@@ -5,9 +5,9 @@ from aiogram import types, Dispatcher
 from config import ADMIN_USER_ID
 from bot.handlers.user.start import is_user_subscribed
 
-async def handle_user_message(message: types.Message):
+async def copy_message_to_admin(message: types.Message):
     """
-    يعالج أي رسالة من المستخدم، ويرسلها للمدير مع معلومات الرد المضمنة.
+    يعالج أي رسالة من المستخدم، يقوم بنسخها وإضافة معلومات الرد في التعليق.
     """
     user_id = message.from_user.id
     
@@ -15,27 +15,28 @@ async def handle_user_message(message: types.Message):
         return
 
     try:
-        # بناء معلومات الرد التي سيتم إضافتها
-        reply_info = (
-            f"\n\n--- معلومات الرد ---\n"
-            f"User ID: `{user_id}`\n"
-            f"Message ID: `{message.message_id}`\n"
-            f"--------------------"
-        )
-        
-        # التعامل مع النصوص والوسائط بشكل مختلف لضمان وصول المعلومات
-        if message.content_type == types.ContentType.TEXT:
-            # للرسائل النصية: نرسل رسالة جديدة تجمع النص الأصلي ومعلومات الرد
+        # بناء التعليق الذي يحتوي على معلومات الرد
+        # هذا هو المفتاح الذي سنستخدمه للرد
+        hidden_metadata = f"\n\n`user_id:{user_id}|message_id:{message.message_id}`"
+
+        # استخدام copy_message لإرسال نسخة من الرسالة
+        # ونضيف المعلومات السرية إلى التعليق أو النص
+        if message.caption:
+            await message.copy_to(
+                ADMIN_USER_ID,
+                caption=message.caption + hidden_metadata,
+                parse_mode=types.ParseMode.MARKDOWN
+            )
+        elif message.text:
             await message.bot.send_message(
-                chat_id=ADMIN_USER_ID,
-                text=message.text + reply_info,
+                ADMIN_USER_ID,
+                message.text + hidden_metadata,
                 parse_mode=types.ParseMode.MARKDOWN
             )
         else:
-            # لبقية الأنواع (صور، ملفات...): نستخدم copy_to ونضيف المعلومات للتعليق
             await message.copy_to(
-                chat_id=ADMIN_USER_ID,
-                caption=(message.caption or "") + reply_info,
+                ADMIN_USER_ID,
+                caption=hidden_metadata,
                 parse_mode=types.ParseMode.MARKDOWN
             )
 
@@ -43,13 +44,15 @@ async def handle_user_message(message: types.Message):
         await message.reply("✅ تم استلام رسالتك بنجاح، سيتم الرد عليك قريباً.")
 
     except Exception as e:
-        print(f"فشل في معالجة الرسالة من المستخدم {user_id}: {e}")
+        print(f"فشل في نسخ الرسالة من المستخدم {user_id}: {e}")
         await message.reply("عذراً، حدث خطأ أثناء محاولة إرسال رسالتك.")
 
 
 def register_message_handlers(dp: Dispatcher):
-    """تسجيل معالج الرسائل."""
+    """
+    تسجيل معالج الرسائل.
+    """
     dp.register_message_handler(
-        handle_user_message, 
+        copy_message_to_admin, 
         content_types=types.ContentTypes.ANY
     )
