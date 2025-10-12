@@ -3,158 +3,111 @@
 import pytz
 from datetime import datetime
 from telegram import Update
-from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler
-from hijri_converter import Hijri, Gregorian
-
+from telegram.ext import ContextTypes, CallbackQueryHandler
+from hijri_converter import Gregorian
 from bot.database.manager import db
 
-# --- قاموس لترجمة أسماء المدن إلى العربية ---
-city_names_ar = {
-    "Riyadh": "الرياض",
-    "Aden": "عدن", # سيبقى هذا موجوداً كمرجع احتياطي
-    "Sanaa": "صنعاء", # الاسم الذي سيتم عرضه
-    "Dubai": "دبي",
-    "Cairo": "القاهرة",
-    "Baghdad": "بغداد",
-    "Kuwait": "الكويت",
-    "Qatar": "قطر",
-    "Bahrain": "البحرين",
-    "Muscat": "مسقط",
-    "Amman": "عمان",
-    "Damascus": "دمشق",
-    "Beirut": "بيروت",
-    "Jerusalem": "القدس",
-}
-
-# --- قواميس لترجمة التواريخ ---
-arabic_months = {
-    1: "محرم", 2: "صفر", 3: "ربيع الأول", 4: "ربيع الثاني",
+# --- قاموس لترجمة أسماء المدن والكلمات ---
+TRANSLATIONS = {
+    # أيام الأسبوع
+    "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين", 
+    "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة",
+    # الشهور الهجرية
+    1: "محرم", 2: "صفر", 3: "ربيع الأول", 4: "ربيع الآخر",
     5: "جمادى الأولى", 6: "جمادى الآخرة", 7: "رجب", 8: "شعبان",
-    9: "رمضان", 10: "شوال", 11: "ذو القعدة", 12: "ذو الحجة"
+    9: "رمضان", 10: "شوال", 11: "ذو القعدة", 12: "ذو الحجة",
+    # الشهور الميلادية
+    "January": "يناير", "February": "فبراير", "March": "مارس", "April": "أبريل",
+    "May": "مايو", "June": "يونيو", "July": "يوليو", "August": "أغسطس",
+    "September": "سبتمبر", "October": "أكتوبر", "November": "نوفمبر", "December": "ديسمبر",
+    # المدن
+    "Aden": "صنعاء",  # عرض صنعاء بدلاً من عدن
+    "Riyadh": "الرياض",
+    "Cairo": "القاهرة",
+    "Dubai": "دبي",
+    # AM/PM
+    "AM": "صباحاً",
+    "PM": "مساءً"
 }
-arabic_days = {
-    "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين",
-    "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس",
-    "Friday": "الجمعة"
-}
 
-async def check_subscription_before_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """وظيفة للتحقق من اشتراك المستخدم قبل تنفيذ أي إجراء."""
-    user_id = update.effective_user.id
-    channels = await db.get_subscription_channels()
-    if not channels:
-        return True
-
-    text_configs = await db.get_text_configs()
-    not_subscribed_message = text_configs.get(
-        'not_subscribed_message',
-        "عذراً، يجب عليك الاشتراك في القنوات التالية لاستخدام البوت:"
-    )
-
-    subscribed = True
-    channels_to_join = []
-    for channel in channels:
-        try:
-            member = await context.bot.get_chat_member(chat_id=channel['channel_id'], user_id=user_id)
-            if member.status not in ['member', 'administrator', 'creator']:
-                subscribed = False
-                channels_to_join.append(f"https://t.me/{channel['channel_username']}")
-        except Exception as e:
-            print(f"Error checking subscription for channel {channel['channel_id']}: {e}")
-            subscribed = False
-            channels_to_join.append(f"https://t.me/{channel['channel_username']}")
-    
-    if not subscribed:
-        full_message = f"{not_subscribed_message}\n\n" + "\n".join(channels_to_join)
-        
-        # نستخدم query.message.reply_text بدلاً من query.edit_message_text
-        # لإرسال رسالة جديدة وعدم تعديل الرسالة القديمة
-        await update.callback_query.message.reply_text(full_message)
-
-    return subscribed
+# --- وظائف الأزرار ---
 
 async def show_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """يعرض التاريخ الهجري والميلادي باللغة العربية."""
     query = update.callback_query
     await query.answer()
-
-    if not await check_subscription_before_action(update, context):
-        return
-
-    today = datetime.now()
-    # تحويل التاريخ الميلادي إلى صيغة قابلة للتحويل
-    gregorian_date = Gregorian(today.year, today.month, today.day)
-    hijri_date = gregorian_date.to_hijri()
-
-    day_name_en = today.strftime('%A')
-    day_name_ar = arabic_days.get(day_name_en, day_name_en)
     
-    hijri_month_ar = arabic_months.get(hijri_date.month, str(hijri_date.month))
-    gregorian_month_name = today.strftime('%B') # اسم الشهر الميلادي بالانجليزية
+    today = datetime.now()
+    # تحويل التاريخ الميلادي إلى هجري
+    hijri_date = Gregorian(today.year, today.month, today.day).to_hijri()
+    
+    # ترجمة الأسماء
+    day_name_en = today.strftime("%A")
+    month_name_en = today.strftime("%B")
+    
+    day_name_ar = TRANSLATIONS.get(day_name_en, day_name_en)
+    hijri_month_ar = TRANSLATIONS.get(hijri_date.month, str(hijri_date.month))
+    gregorian_month_ar = TRANSLATIONS.get(month_name_en, month_name_en)
 
-    date_message = (
-        f"اليوم : {day_name_ar}\n"
-        f"التاريخ : {hijri_date.day} {hijri_month_ar} {hijri_date.year} هـ\n"
-        f"الموافق : {today.day} / {today.month} / {today.year} م"
+    date_text = (
+        f"اليوم: {day_name_ar}\n"
+        f"التاريخ: {hijri_date.day} {hijri_month_ar} {hijri_date.year} هـ\n"
+        f"الموافق: {today.day} {gregorian_month_ar} {today.year} م"
     )
-
-    await query.edit_message_text(text=date_message, reply_markup=query.message.reply_markup)
+    
+    await query.edit_message_text(text=date_text, reply_markup=query.message.reply_markup)
 
 async def show_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """يعرض الوقت الحالي باللغة العربية مع اسم المدينة المترجم."""
+    """يعرض الوقت الحالي حسب المنطقة الزمنية المحددة."""
     query = update.callback_query
     await query.answer()
 
-    if not await check_subscription_before_action(update, context):
-        return
-
     timezone_str = await db.get_timezone()
+    city_name_en = timezone_str.split('/')[-1]
     
-    try:
-        tz = pytz.timezone(timezone_str)
-        now = datetime.now(tz)
-        
-        # تنسيق الوقت واستبدال AM/PM بالعربية
-        time_str_en = now.strftime("%I:%M:%S %p")
-        time_str_ar = time_str_en.replace("AM", "صباحاً").replace("PM", "مساءً")
-        
-        # --- السطر السحري ---
-        # استخراج اسم المدينة وتغييره إذا كان "Aden"
-        city_en = timezone_str.split('/')[-1]
-        if city_en == "Aden":
-            city_en = "Sanaa" # هنا يتم التغيير
-        # --------------------
-
-        city_ar = city_names_ar.get(city_en, city_en)
-        
-        message = f"الساعة الآن {time_str_ar} بتوقيت {city_ar}"
-        
-    except pytz.UnknownTimeZoneError:
-        message = "حدث خطأ في تحديد المنطقة الزمنية. يرجى مراجعة الإعدادات."
-    except Exception as e:
-        print(f"Error in show_time: {e}")
-        message = "حدث خطأ ما."
-
-    await query.edit_message_text(text=message, reply_markup=query.message.reply_markup)
+    # استبدال عدن بصنعاء للعرض فقط
+    display_city_en = "Sanaa" if city_name_en == "Aden" else city_name_en
+    city_name_ar = TRANSLATIONS.get(display_city_en, display_city_en)
+    
+    timezone = pytz.timezone(timezone_str)
+    current_time = datetime.now(timezone)
+    
+    # تنسيق الوقت مع صباحاً/مساءً
+    time_str_en = current_time.strftime("%I:%M:%S %p")
+    time_str_ar = time_str_en.replace("AM", TRANSLATIONS["AM"]).replace("PM", TRANSLATIONS["PM"])
+    
+    time_text = f"الساعة الآن: {time_str_ar} بتوقيت {city_name_ar}"
+    
+    await query.edit_message_text(text=time_text, reply_markup=query.message.reply_markup)
 
 async def show_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """يعرض ذكراً عشوائياً من قاعدة البيانات."""
     query = update.callback_query
     await query.answer()
-
-    if not await check_subscription_before_action(update, context):
-        return
-
-    reminder = await db.get_random_reminder()
-    text_configs = await db.get_text_configs()
     
+    reminder = await db.get_random_reminder()
     if reminder:
         await query.edit_message_text(text=reminder, reply_markup=query.message.reply_markup)
     else:
-        no_reminders_text = text_configs.get('no_reminders_message', "لم تتم إضافة أي أذكار بعد.")
-        await query.edit_message_text(text=no_reminders_text, reply_markup=query.message.reply_markup)
+        await query.edit_message_text(text="لم يتم إضافة أي أذكار بعد.", reply_markup=query.message.reply_markup)
 
-# --- المعالجات ---
+# --- الوظيفة المفقودة التي سببت الخطأ ---
+async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """يستجيب لزر التواصل مع الإدارة ويطلب من المستخدم إرسال رسالته."""
+    query = update.callback_query
+    await query.answer()
+    
+    contact_prompt_text = await db.get_text(
+        "contact_prompt", 
+        "تفضل بإرسال رسالتك الآن. سيتم توصيلها مباشرة إلى الإدارة."
+    )
+    # ملاحظة: نستخدم reply_text هنا لأننا نريد أن يتمكن المستخدم من إرسال رسالة جديدة
+    await query.message.reply_text(text=contact_prompt_text)
+    # نحذف الرسالة القديمة التي تحتوي على الأزرار لتنظيف الواجهة
+    await query.message.delete()
+
+# --- إنشاء المعالجات ---
 show_date_handler = CallbackQueryHandler(show_date, pattern="^show_date$")
 show_time_handler = CallbackQueryHandler(show_time, pattern="^show_time$")
 show_reminder_handler = CallbackQueryHandler(show_reminder, pattern="^show_reminder$")
+contact_admin_handler = CallbackQueryHandler(contact_admin, pattern="^contact_admin$") # <-- تعريف المعالج
