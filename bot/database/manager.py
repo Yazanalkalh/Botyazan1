@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import logging
-from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
 from telegram import Message
+from bson.objectid import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -11,19 +12,15 @@ class DatabaseManager:
     def __init__(self):
         self.client = None
         self.db = None
-        self.users_collection = None
-        self.approved_channels_collection = None
-        self.subscription_channels_collection = None
-        self.texts_collection = None
-        self.reminders_collection = None
-        self.settings_collection = None
-        self.temp_posts_collection = None
-        self.scheduled_posts_collection = None
+        # ... collections will be initialized in connect_to_database
 
     async def connect_to_database(self, uri: str):
+        """الاتصال بقاعدة البيانات باستخدام motor."""
         try:
-            self.client = MongoClient(uri, appname="islamic_bot")
+            self.client = AsyncIOMotorClient(uri)
             self.db = self.client.get_database("IslamicBotDB")
+            
+            # تهيئة المجموعات
             self.users_collection = self.db.users
             self.approved_channels_collection = self.db.approved_channels
             self.subscription_channels_collection = self.db.subscription_channels
@@ -32,6 +29,7 @@ class DatabaseManager:
             self.settings_collection = self.db.settings
             self.temp_posts_collection = self.db.temp_posts
             self.scheduled_posts_collection = self.db.scheduled_posts
+            
             await self.initialize_defaults()
             logger.info("تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
             return True
@@ -40,13 +38,16 @@ class DatabaseManager:
             return False
 
     async def initialize_defaults(self):
+        """إنشاء المستندات الافتراضية إذا لم تكن موجودة."""
         defaults = {
             "welcome_message": "أهلاً بك يا {user_mention}!", "date_button": "📅 التاريخ",
             "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
             "contact_button": "📨 تواصل مع الإدارة"
         }
         for key, value in defaults.items():
+            # $setOnInsert prevents overwriting existing values
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
+        
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
 
     # --- وظائف المستخدمين ---
@@ -64,9 +65,8 @@ class DatabaseManager:
         )
 
     async def get_all_approved_channels(self):
-        """تجلب كل القنوات المعتمدة."""
         channels_cursor = self.approved_channels_collection.find()
-        return [doc for doc in await channels_cursor.to_list(length=None)]
+        return await channels_cursor.to_list(length=None)
 
     async def is_channel_approved(self, channel_id: int) -> bool:
         return await self.approved_channels_collection.find_one({"channel_id": channel_id}) is not None
@@ -81,7 +81,7 @@ class DatabaseManager:
     async def get_subscription_channels(self, page: int = 1, limit: int = 10):
         skip = (page - 1) * limit
         channels_cursor = self.subscription_channels_collection.find().skip(skip).limit(limit)
-        return [doc for doc in await channels_cursor.to_list(length=limit)]
+        return await channels_cursor.to_list(length=limit)
 
     async def get_subscription_channels_count(self) -> int:
         return await self.subscription_channels_collection.count_documents({})
@@ -103,6 +103,7 @@ class DatabaseManager:
 
     async def get_random_reminder(self) -> str:
         pipeline = [{"$sample": {"size": 1}}]
+        # aggregate returns an async cursor
         async for doc in self.reminders_collection.aggregate(pipeline):
             return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
@@ -110,19 +111,18 @@ class DatabaseManager:
     async def get_all_reminders(self, page: int = 1, limit: int = 10):
         skip = (page - 1) * limit
         reminders_cursor = self.reminders_collection.find().skip(skip).limit(limit)
-        return [doc for doc in await reminders_cursor.to_list(length=limit)]
+        return await reminders_cursor.to_list(length=limit)
 
     async def get_reminders_count(self) -> int:
         return await self.reminders_collection.count_documents({})
 
     async def delete_reminder(self, reminder_id):
-        from bson.objectid import ObjectId
         await self.reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
 
     # --- وظائف الإعدادات ---
     async def get_timezone(self) -> str:
         doc = await self.settings_collection.find_one({"_id": "timezone"})
-        return doc.get("value", "Asia/Riyadh")
+        return doc.get("value", "Asia/Riyadh") if doc else "Asia/Riyadh"
         
     async def set_timezone(self, new_timezone: str):
         await self.settings_collection.update_one({"_id": "timezone"}, {"$set": {"value": new_timezone}}, upsert=True)
