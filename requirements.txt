@@ -3,9 +3,8 @@ motor
 pymongo
 dnspython
 python-dotenv
-Flask==2.2.2
-Werkzeug==2.2.3
 hijri-converter==2.3.1
 pytz
 Babel
 aiogram-mongo
+aiohttp
