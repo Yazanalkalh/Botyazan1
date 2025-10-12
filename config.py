@@ -3,16 +3,17 @@
 import os
 
 # --- شرح ---
-# هذا الملف هو المسؤول عن قراءة "متغيرات البيئة" (الأسرار) التي قمت بتعيينها في لوحة تحكم Render.
-# يستخدم مكتبة os المدمجة في بايثون للقيام بذلك بأمان.
-# هذه هي النسخة النهائية التي لا تعتمد على مكتبة dotenv.
+# هذا الملف يقرأ الإعدادات الحساسة بأمان من متغيرات البيئة في Render.
 
-# قراءة توكن البوت
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+MONGO_URI = os.getenv("MONGO_URI")
 
-# قراءة رابط الاتصال بقاعدة البيانات
-MONGO_URI = os.environ.get("MONGO_URI")
+# تأكد من تحويل المعرف إلى عدد صحيح
+ADMIN_USER_ID_STR = os.getenv("ADMIN_USER_ID")
+ADMIN_USER_ID = int(ADMIN_USER_ID_STR) if ADMIN_USER_ID_STR and ADMIN_USER_ID_STR.isdigit() else None
 
-# قراءة معرّف حساب المدير (يتم تحويله إلى عدد صحيح)
-# نستخدم int() للتحويل لأن المعرّفات تكون أرقاماً.
-ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", 0))
+# تحقق من وجود المتغيرات الأساسية
+if not TELEGRAM_TOKEN or not MONGO_URI or not ADMIN_USER_ID:
+    print("خطأ: يرجى التأكد من تعيين متغيرات البيئة التالية في Render:")
+    print("TELEGRAM_TOKEN, MONGO_URI, ADMIN_USER_ID")
+    exit()
