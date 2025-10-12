@@ -5,6 +5,8 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 )
 from bot.database.manager import db
+# --- سطر الاستدعاء المفقود ---
+from bot.handlers.admin.main_panel import admin_panel_handler
 
 # --- تعريف النصوص القابلة للتعديل ---
 EDITABLE_TEXTS = {
@@ -38,12 +40,16 @@ async def request_new_text_input(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     text_key = query.data.replace("edit_text_", "")
     
-    # حفظ المفتاح في بيانات المستخدم للمحادثة
     context.user_data['text_key_to_edit'] = text_key
     
-    default_text = "N/A" # قيمة افتراضية في حالة عدم وجود نص
-    if text_key == "welcome_message": default_text = "أهلاً بك في بوت التقويم الإسلامي!"
-    # ... يمكن إضافة قيم افتراضية للبقية ...
+    default_text = {
+        "welcome_message": "أهلاً بك في بوت التقويم الإسلامي!",
+        "date_button": "📅 التاريخ",
+        "time_button": "⏰ الساعة الآن",
+        "reminder_button": "📿 أذكار اليوم",
+        "contact_button": "📨 تواصل مع الإدارة",
+        "contact_prompt": "تفضل بإرسال رسالتك الآن..."
+    }.get(text_key, "N/A")
     
     current_text = await db.get_text(text_key, default_text)
 
@@ -66,7 +72,6 @@ async def handle_new_text_input(update: Update, context: ContextTypes.DEFAULT_TY
     await db.set_text(text_key, new_text)
     await update.message.reply_text(f"✅ تم تحديث نص '{EDITABLE_TEXTS[text_key]}' بنجاح!")
     
-    # مسح البيانات المؤقتة والعودة
     del context.user_data['text_key_to_edit']
     
     # العودة إلى قائمة تعديل النصوص
