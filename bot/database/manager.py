@@ -3,7 +3,6 @@
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
-from telegram import Message # سنغير هذا لاحقاً إذا احتجنا
 from bson.objectid import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -48,13 +47,16 @@ class DatabaseManager:
         
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
 
-    # ... بقية وظائف قاعدة البيانات تبقى كما هي لأنها تستخدم motor
-    # --- وظائف المستخدمين ---
     async def add_user(self, user):
+        """إضافة مستخدم جديد أو تحديث بياناته."""
         user_data = {
-            'user_id': user.id, 'first_name': user.first_name,
-            'last_name': user.last_name, 'username': user.username
+            'user_id': user.id,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'username': user.username
         }
         await self.users_collection.update_one({'user_id': user.id}, {'$set': user_data}, upsert=True)
+
+# ... بقية وظائف قاعدة البيانات يمكن إضافتها هنا عند الحاجة ...
 
 db = DatabaseManager()
