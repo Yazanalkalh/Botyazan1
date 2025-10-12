@@ -2,29 +2,44 @@
 
 from aiogram import types, Dispatcher
 from config import ADMIN_USER_ID
+import re
+
+def _extract_reply_info(message: types.Message) -> (int | None, int | None):
+    """
+    وظيفة متخصصة لاستخراج معلومات الرد من نص أو تعليق.
+    """
+    text_to_search = message.caption or message.text
+    if not text_to_search:
+        return None, None
+
+    user_id_match = re.search(r"User ID:\s*`(\d+)`", text_to_search)
+    message_id_match = re.search(r"Message ID:\s*`(\d+)`", text_to_search)
+
+    user_id = int(user_id_match.group(1)) if user_id_match else None
+    message_id = int(message_id_match.group(1)) if message_id_match else None
+        
+    return user_id, message_id
+
 
 async def reply_to_user(message: types.Message):
     """
-    يعالج ردود المدير على الرسائل المعاد توجيهها.
+    يعالج ردود المدير ويرسلها كرد مباشر للمستخدم.
     """
-    # التأكد من أن المرسل هو المدير، وأن الرسالة هي رد على رسالة أخرى
     if message.from_user.id != ADMIN_USER_ID or not message.reply_to_message:
         return
 
-    # التأكد من أن الرسالة التي يتم الرد عليها هي رسالة معاد توجيهها
-    if not message.reply_to_message.forward_from:
+    original_user_id, original_message_id = _extract_reply_info(message.reply_to_message)
+
+    if not original_user_id or not original_message_id:
         return
 
-    # الحصول على معرّف المستخدم الأصلي من الرسالة المعاد توجيهها
-    original_user_id = message.reply_to_message.forward_from.id
-
     try:
-        # إرسال رد المدير إلى المستخدم الأصلي
-        # ملاحظة: هذه الطريقة لا تقوم بعمل "رد" على رسالة المستخدم الأصلية،
-        # ولكنها تضمن وصول الرسالة إليه، وهو الأهم.
+        # --- الإرسال كرد مباشر للمستخدم الأصلي ---
+        # هذا هو السطر الذي تم حذفه بالخطأ وإعادته الآن
         await message.bot.send_message(
             chat_id=original_user_id,
-            text=message.text
+            text=message.text,
+            reply_to_message_id=original_message_id
         )
         await message.reply("✅ تم إرسال ردك بنجاح.")
 
@@ -33,9 +48,4 @@ async def reply_to_user(message: types.Message):
 
 
 def register_communication_handlers(dp: Dispatcher):
-    """تسجيل معالج ردود المدير."""
-    dp.register_message_handler(
-        reply_to_user, 
-        is_reply=True, 
-        content_types=types.ContentTypes.TEXT
-    )
+    dp.register_message_handler(reply_to_user, is_reply=True, content_types=types.ContentTypes.TEXT)
