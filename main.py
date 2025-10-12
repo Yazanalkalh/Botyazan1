@@ -1,72 +1,92 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
+import logging
+import os
 from telegram import Update
 from telegram.ext import Application
+from config import TELEGRAM_TOKEN
+from bot.database.manager import db
 
-from config import TELEGRAM_TOKEN, ADMIN_USER_ID
-from bot.database.manager import db_connection
-
-# --- استيراد جميع المعالجات كما هي ---
-from bot.handlers.user.start import (
-    start_handler, recheck_subscription_callback_handler, contact_admin_handler
-)
-from bot.handlers.user.callbacks import (
-    show_date_handler, show_time_handler, show_reminder_handler
-)
+# استيراد معالجات المستخدم
+from bot.handlers.user.start import start_handler
+from bot.handlers.user.callbacks import show_date_handler, show_time_handler, show_reminder_handler
 from bot.handlers.user.message_handler import message_forwarder_handler
-from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
-from bot.handlers.admin.approval_handler import (
-    channel_approval_tracker, channel_decision_handler
-)
+
+# استيراد معالجات المدير
+from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler, reminders_panel_callback, subscription_menu_callback, texts_menu_callback
+from bot.handlers.admin.approval_handler import new_member_handler, channel_approval_handler
 from bot.handlers.admin.communication_handler import admin_reply_handler
-from bot.handlers.admin.reminders_handler import (
-    reminders_panel_handler, view_all_reminders_handler, delete_reminder_handler,
-    add_reminder_conv_handler, import_reminders_conv_handler
-)
-from bot.handlers.admin.interface_handler import (
-    interface_menu_handler, change_timezone_conv_handler
-)
-from bot.handlers.admin.subscription_handler import (
-    subscription_menu_handler, view_channels_main_handler, delete_channel_main_handler,
-    add_channel_conversation_handler
-)
-from bot.handlers.admin.text_editor_handler import (
-    edit_texts_menu_handler, edit_texts_conversation_handler
-)
+from bot.handlers.admin.reminders_handler import *
+from bot.handlers.admin.interface_handler import *
+from bot.handlers.admin.subscription_handler import *
+from bot.handlers.admin.text_editor_handler import *
 
-def main():
-    """نقطة انطلاق البوت الرئيسية."""
-    if db_connection is None:
-        print("فشل الاتصال بقاعدة البيانات. لا يمكن تشغيل البوت.")
-        return
-        
-    if not TELEGRAM_TOKEN or not ADMIN_USER_ID:
-        print("يرجى التأكد من إعداد التوكن ومعرف المدير.")
-        return
+# إعداد تسجيل الدخول الأساسي
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-    # --- بناء التطبيق ---
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+def main() -> None:
+    """Функция запуска и настройки бота."""
     
-    # --- إضافة جميع المعالجات ---
-    all_handlers = [
-        add_reminder_conv_handler, import_reminders_conv_handler,
-        change_timezone_conv_handler, add_channel_conversation_handler,
-        edit_texts_conversation_handler, channel_approval_tracker,
-        channel_decision_handler, admin_reply_handler, start_handler,
-        recheck_subscription_callback_handler, contact_admin_handler,
-        show_date_handler, show_time_handler, show_reminder_handler,
-        admin_handler, admin_panel_back_handler, reminders_panel_handler,
-        view_all_reminders_handler, delete_reminder_handler,
-        interface_menu_handler, subscription_menu_handler,
-        view_channels_main_handler, delete_channel_main_handler,
-        edit_texts_menu_handler, message_forwarder_handler,
-    ]
-    application.add_handlers(all_handlers)
+    # إعداد التطبيق
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # --- تشغيل البوت بالطريقة القياسية ---
-    # هذه الدالة ستبقي البوت يعمل وتتعامل مع الإيقاف الآمن تلقائياً.
-    print("البوت قيد التشغيل...")
+    # --- إضافة المعالجات ---
+    handlers = [
+        # معالجات المستخدم
+        start_handler,
+        show_date_handler,
+        show_time_handler,
+        show_reminder_handler,
+        message_forwarder_handler,
+        
+        # معالجات المدير
+        admin_handler,
+        admin_panel_back_handler,
+        new_member_handler,
+        channel_approval_handler,
+        admin_reply_handler,
+        
+        # وحدة التذكيرات
+        reminders_panel_handler,
+        reminders_panel_back_handler,
+        reminders_page_handler,
+        delete_reminder_handler,
+        add_reminder_conv_handler,
+        import_reminders_conv_handler,
+
+        # وحدة الواجهة
+        interface_menu_handler,
+        change_timezone_conv_handler,
+        
+        # وحدة الاشتراك الإجباري (مع نظام الصفحات الجديد)
+        subscription_menu_handler,
+        subscription_menu_back_handler,
+        add_channel_conversation_handler,
+        subscription_page_handler, # المعالج الجديد
+        delete_subscription_channel_handler, # المعالج الجديد
+
+        # وحدة تعديل النصوص
+        texts_menu_handler,
+        edit_texts_conversation_handler
+    ]
+    application.add_handlers(handlers)
+
+    # تشغيل البوت
+    logger.info("البوت قيد التشغيل...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    # الاتصال بقاعدة البيانات قبل تشغيل البوت
+    mongo_uri = os.getenv("MONGO_URI")
+    if not mongo_uri:
+        logger.error("لم يتم العثور على متغير البيئة MONGO_URI.")
+    else:
+        # استخدام asyncio.run لتشغيل الدالة غير المتزامنة
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(db.connect_to_database(uri=mongo_uri))
+        main()
