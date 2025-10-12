@@ -4,16 +4,16 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 # --- تعريف لوحة التحكم الرئيسية ---
-async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, from_conversation: bool = False):
+async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """يعرض لوحة تحكم المدير الرئيسية."""
     
-    # تحديد المستخدم والرسالة بناءً على مصدر الاستدعاء
-    if update.callback_query:
-        query = update.callback_query
+    # تحديد مصدر الاستدعاء
+    query = update.callback_query
+    if query:
         await query.answer()
         user = query.from_user
         message_sender = query.edit_message_text
-    else: # from command or conversation end
+    else:
         user = update.effective_user
         message_sender = update.effective_message.reply_text
 
@@ -22,7 +22,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await message_sender("عذراً، هذه المنطقة مخصصة للمدير فقط.")
         return
 
-    # حفظ معرّف المدير في بيانات المستخدم للمحادثات
+    # حفظ معرّف المدير في بيانات المستخدم
     context.user_data['admin_id'] = admin_id
 
     keyboard = [
@@ -31,7 +31,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             InlineKeyboardButton("🗓️ التذكيرات", callback_data="reminders_panel")
         ],
         [
-            InlineKeyboardButton("📢 منشورات القناة", callback_data="publishing_menu"), # <-- الزر الجديد
+            InlineKeyboardButton("📢 منشورات القناة", callback_data="new_post"), # <-- تم التصحيح هنا
             InlineKeyboardButton("📨 تواصل مع المستخدمين", callback_data="communication_menu")
         ],
         [
