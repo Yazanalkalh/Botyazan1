@@ -22,10 +22,10 @@ from bot.handlers.user.message_handler import message_forwarder_handler
 from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
 from bot.handlers.admin.approval_handler import new_member_handler, channel_approval_handler
 from bot.handlers.admin.communication_handler import admin_reply_handler
-from bot.handlers.admin.reminders_handler import reminders_panel_handler, reminders_panel_back_handler, add_reminder_conv_handler, import_reminders_conv_handler, reminders_page_handler, delete_reminder_handler
-from bot.handlers.admin.interface_handler import interface_menu_handler, change_timezone_conv_handler
-from bot.handlers.admin.subscription_handler import subscription_menu_handler, subscription_menu_back_handler, add_channel_conversation_handler, subscription_page_handler, delete_subscription_channel_handler
-from bot.handlers.admin.text_editor_handler import texts_menu_handler, edit_texts_conversation_handler
+from bot.handlers.admin.reminders_handler import *
+from bot.handlers.admin.interface_handler import *
+from bot.handlers.admin.subscription_handler import *
+from bot.handlers.admin.text_editor_handler import *
 
 # --- إعداد البوت ---
 logging.basicConfig(
@@ -48,7 +48,7 @@ async def main() -> None:
         admin_handler, new_member_handler, channel_approval_handler,
         admin_reply_handler, 
         
-        # معالجات أزرار لوحة التحكم (كل واحد من قسمه)
+        # معالجات أزرار لوحة التحكم
         reminders_panel_handler, interface_menu_handler,
         subscription_menu_handler, texts_menu_handler,
 
