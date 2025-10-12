@@ -26,15 +26,12 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     reply_markup = await get_admin_panel_markup()
     
-    # إذا كان مصدر الطلب هو أمر /admin
     if update.message:
         await update.message.reply_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
-    # إذا كان مصدر الطلب هو زر رجوع
     elif update.callback_query:
         query = update.callback_query
         await query.answer()
         await query.edit_message_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
 
-# --- المعالجات ---
 admin_command_handler = CommandHandler("admin", admin_panel_handler)
 admin_panel_callback_handler = CallbackQueryHandler(admin_panel_handler, pattern="^admin_panel_back$")
