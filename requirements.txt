@@ -1,6 +1,6 @@
 python-telegram-bot>=20.0
 motor>=3.1.1
 pytz>=2023.3
-hypercorn==1.1.1
+hypercorn>=0.17.3
 hijri-converter>=2.3.1
 Flask>=2.3.0
