@@ -13,35 +13,30 @@ from bot.database.manager import db
 
 # --- استيراد وتسجيل المعالجات ---
 from bot.handlers.user.start import register_start_handlers
+from bot.handlers.user.callbacks import register_callback_handlers # <-- إضافة جديدة
 
 # --- إعداد البوت ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# FSM Storage for conversations
 storage = MemoryStorage()
-
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher(bot, storage=storage)
 
 async def on_startup(dispatcher: Dispatcher):
-    """
-    يتم تنفيذ هذه الوظيفة عند بدء تشغيل البوت.
-    """
+    """يتم تنفيذ هذه الوظيفة عند بدء تشغيل البوت."""
     logger.info("الاتصال بقاعدة البيانات...")
     await db.connect_to_database(uri=MONGO_URI)
     
     # تسجيل كل المعالجات هنا
     register_start_handlers(dispatcher)
+    register_callback_handlers(dispatcher) # <-- إضافة جديدة
     
     logger.info("البوت جاهز للعمل.")
 
 async def on_shutdown(dispatcher: Dispatcher):
-    """
-    يتم تنفيذ هذه الوظيفة عند إيقاف البوت.
-    """
+    """يتم تنفيذ هذه الوظيفة عند إيقاف البوت."""
     logger.warning('إيقاف البوت...')
-    # هنا يمكن إضافة كود لتنظيف الموارد إذا احتجنا
 
 if __name__ == '__main__':
     # 1. تشغيل Flask في الخلفية
@@ -50,7 +45,7 @@ if __name__ == '__main__':
     flask_thread.start()
     logger.info("خادم الويب Flask قيد التشغيل...")
 
-    # 2. تشغيل البوت باستخدام aiogram executor
+    # 2. تشغيل البوت
     executor.start_polling(
         dispatcher=dp,
         skip_updates=True,
