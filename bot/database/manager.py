@@ -2,7 +2,7 @@
 
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import ConnectionFailure
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -18,13 +18,13 @@ class DatabaseManager:
         return self.client is not None and self.db is not None
 
     async def connect_to_database(self, uri: str):
-        """الاتصال بقاعدة البيانات باستخدام motor."""
+        """الاتصال بقاعدة البيانات واختبار الاتصال."""
         try:
-            self.client = AsyncIOMotorClient(uri)
-            self.db = self.client.get_database("IslamicBotDBAiogram")
-            
-            # --- اختبار الاتصال الفعلي ---
+            self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
+            # --- التحسين رقم 3: اختبار الاتصال الفعلي ---
             await self.client.admin.command("ping")
+            
+            self.db = self.client.get_database("IslamicBotDBAiogram")
             
             self.users_collection = self.db.users
             self.texts_collection = self.db.texts
@@ -38,7 +38,7 @@ class DatabaseManager:
             await self.initialize_defaults()
             logger.info("✅ تم الاتصال بقاعدة بيانات MongoDB بنجاح (aiogram).")
             return True
-        except ConnectionFailure as e:
+        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
             logger.error(f"فشل الاتصال بقاعدة البيانات: {e}")
             return False
         except Exception as e:
@@ -47,6 +47,7 @@ class DatabaseManager:
 
     async def initialize_defaults(self):
         """إنشاء المستندات الافتراضية إذا لم تكن موجودة."""
+        if not self.is_connected(): return
         defaults = {
             "welcome_message": "أهلاً بك يا {user_mention}!", "date_button": "📅 التاريخ",
             "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
@@ -59,6 +60,8 @@ class DatabaseManager:
     # --- وظائف المستخدمين ---
     async def add_user(self, user):
         """إضافة مستخدم جديد أو تحديث بياناته (مع معالجة القيم الفارغة)."""
+        if not self.is_connected(): return
+        # --- التحسين رقم 1: معالجة القيم الفارغة ---
         user_data = {
             'user_id': user.id,
             'first_name': user.first_name or "",
@@ -69,12 +72,15 @@ class DatabaseManager:
 
     # --- وظائف النصوص ---
     async def get_text(self, text_id: str) -> str:
+        """جلب نص معين من قاعدة البيانات."""
+        if not self.is_connected(): return "..."
         doc = await self.texts_collection.find_one({"_id": text_id})
-        default_text = text_id.replace("_", " ").title()
+        default_text = "نص غير متوفر"
         return doc.get("text", default_text) if doc else default_text
 
     # --- وظائف التذكيرات ---
     async def get_random_reminder(self) -> str:
+        if not self.is_connected(): return "لا توجد أذكار حالياً."
         pipeline = [{"$sample": {"size": 1}}]
         async for doc in self.reminders_collection.aggregate(pipeline):
             return doc.get("text", "لا توجد أذكار حالياً.")
@@ -82,26 +88,28 @@ class DatabaseManager:
 
     # --- وظائف الإعدادات ---
     async def get_timezone(self) -> str:
+        if not self.is_connected(): return "Asia/Riyadh"
         doc = await self.settings_collection.find_one({"_id": "timezone"})
         return doc.get("value", "Asia/Riyadh") if doc else "Asia/Riyadh"
         
     # --- وظائف الاشتراك الإجباري ---
     async def get_subscription_channels(self) -> list[str]:
         """جلب قائمة بأسماء مستخدمي قنوات الاشتراك الإجباري."""
+        if not self.is_connected(): return []
         channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
+        # --- التحسين رقم 2: إرجاع قائمة نصوص نظيفة ---
         channels_list = await channels_cursor.to_list(length=None)
-        # إرجاع قائمة من النصوص مباشرة
         return [ch["username"] for ch in channels_list]
 
     async def add_subscription_channel(self, channel_username: str) -> bool:
-        """إضافة قناة اشتراك جديدة."""
+        if not self.is_connected(): return False
         if not await self.subscription_channels_collection.find_one({"username": channel_username}):
             await self.subscription_channels_collection.insert_one({"username": channel_username})
             return True
         return False
 
     async def delete_subscription_channel(self, channel_username: str):
-        """حذف قناة اشتراك."""
+        if not self.is_connected(): return
         await self.subscription_channels_collection.delete_one({"username": channel_username})
 
 db = DatabaseManager()
