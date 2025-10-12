@@ -6,5 +6,4 @@ python-dotenv
 hijri-converter==2.3.1
 pytz
 Babel
-aiogram-mongo
 aiohttp
