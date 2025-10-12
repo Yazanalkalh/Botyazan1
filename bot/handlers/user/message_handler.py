@@ -21,9 +21,10 @@ async def forward_message_to_admin(message: types.Message):
 
     except Exception as e:
         print(f"فشل في إعادة توجيه الرسالة من المستخدم {message.from_user.id}: {e}")
-        await message.reply("عذراً، حدث خطأ أثناء إرسال رسالتك.")
+        await message.reply("عذراً, حدث خطأ أثناء إرسال رسالتك.")
 
 
 def register_message_handlers(dp: Dispatcher):
     """تسجيل معالج الرسائل."""
-    dp.register_message_handler(handle_user_message, content_types=types.ContentTypes.ANY)
+    # --- التصحيح هنا: استخدام الاسم الصحيح للوظيفة ---
+    dp.register_message_handler(forward_message_to_admin, content_types=types.ContentTypes.ANY)
