@@ -4,32 +4,45 @@ from aiogram import types, Dispatcher
 from config import ADMIN_USER_ID
 import re
 
+def _extract_reply_info(message: types.Message) -> (int | None, int | None):
+    """
+    وظيفة متخصصة لاستخراج معلومات الرد من نص أو تعليق.
+    تبحث عن معرف المستخدم ومعرف الرسالة.
+    """
+    # النص الذي سنبحث فيه هو التعليق (للوسائط) أو النص (للرسائل النصية)
+    text_to_search = message.caption or message.text
+    
+    if not text_to_search:
+        return None, None
+
+    user_id = None
+    message_id = None
+
+    # البحث عن معرف المستخدم ومعرف الرسالة باستخدام التعبيرات النمطية
+    user_id_match = re.search(r"User ID:\s*`(\d+)`", text_to_search)
+    message_id_match = re.search(r"Message ID:\s*`(\d+)`", text_to_search)
+
+    if user_id_match:
+        user_id = int(user_id_match.group(1))
+    
+    if message_id_match:
+        message_id = int(message_id_match.group(1))
+        
+    return user_id, message_id
+
+
 async def reply_to_user(message: types.Message):
     """
-    يعالج ردود المدير على الرسائل المنسوخة ويقوم بإرسالها كرد مباشر للمستخدم.
+    يعالج ردود المدير على الرسائل المنسوخة ويرسلها كرد مباشر للمستخدم.
     """
     # التأكد من أن المرسل هو المدير، وأن الرسالة هي رد
     if message.from_user.id != ADMIN_USER_ID or not message.reply_to_message:
         return
 
-    original_user_id = None
-    original_message_id = None
-    
-    # النص الذي سنبحث فيه عن المعرفات هو التعليق (caption)
-    caption = message.reply_to_message.caption
-    
-    if caption:
-        # البحث عن معرف المستخدم ومعرف الرسالة باستخدام التعبيرات النمطية
-        user_id_match = re.search(r"User ID:\s*`(\d+)`", caption)
-        message_id_match = re.search(r"Message ID:\s*`(\d+)`", caption)
+    # استدعاء المحقق الخبير لاستخراج المعلومات
+    original_user_id, original_message_id = _extract_reply_info(message.reply_to_message)
 
-        if user_id_match:
-            original_user_id = int(user_id_match.group(1))
-        
-        if message_id_match:
-            original_message_id = int(message_id_match.group(1))
-
-    # إذا لم نجد المعرفات المطلوبة في التعليق، نتوقف
+    # إذا لم يجد المحقق المعلومات المطلوبة، نتوقف
     if not original_user_id or not original_message_id:
         return
 
@@ -40,18 +53,16 @@ async def reply_to_user(message: types.Message):
             text=message.text, # نص رسالة المدير فقط
             reply_to_message_id=original_message_id # <-- هنا يحدث السحر
         )
-        # إعلام المدير بنجاح الإرسال (اختياري)
         await message.reply("✅ تم إرسال ردك بنجاح.")
 
     except Exception as e:
-        await message.reply(f"❌ فشل إرسال الرد. قد يكون المستخدم قد حظر البوت.\n\nالخطأ: {e}")
+        await message.reply(f"❌ فشل إرسال الرد. الخطأ: {e}")
 
 
 def register_communication_handlers(dp: Dispatcher):
     """
     تسجيل معالج ردود المدير.
     """
-    # سيعمل هذا المعالج فقط عندما يرد المدير على أي نوع من الرسائل
     dp.register_message_handler(
         reply_to_user, 
         is_reply=True, 
