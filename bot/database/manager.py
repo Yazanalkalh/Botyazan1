@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 
-import os
 import random
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
+from bson import ObjectId
 
 class DatabaseManager:
     def __init__(self):
@@ -22,16 +22,14 @@ class DatabaseManager:
         """الاتصال بقاعدة بيانات MongoDB."""
         try:
             self.client = AsyncIOMotorClient(uri)
-            # اسم قاعدة البيانات سيكون "TelegramBotDB"
             self.db = self.client["TelegramBotDB"]
             
-            # تهيئة مجموعات البيانات
             self.reminders_collection = self.db["reminders"]
             self.settings_collection = self.db["settings"]
             self.approved_channels_collection = self.db["approved_channels"]
             self.subscription_channels_collection = self.db["subscription_channels"]
             self.texts_collection = self.db["texts"]
-            self.users_collection = self.db["users"] # <-- تهيئة مجموعة المستخدمين
+            self.users_collection = self.db["users"]
             
             print("تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
             return True
@@ -43,9 +41,8 @@ class DatabaseManager:
         """إغلاق الاتصال بقاعدة البيانات."""
         if self.client:
             self.client.close()
-            print("تم إغلاق الاتصال بقاعدة البيانات.")
 
-    # --- وظيفة إضافة/تحديث المستخدم (الوظيفة المفقودة) ---
+    # --- وظائف المستخدمين ---
     async def add_user(self, user_id: int, first_name: str, username: str):
         """إضافة مستخدم جديد أو تحديث بياناته إذا كان موجوداً."""
         if self.users_collection is not None:
@@ -55,7 +52,6 @@ class DatabaseManager:
                 'username': username,
                 'last_update_date': datetime.utcnow()
             }
-            # upsert=True تعني: إذا لم تجد المستخدم، قم بإضافته. إذا وجدته، قم بتحديث بياناته.
             await self.users_collection.update_one(
                 {'user_id': user_id},
                 {'$set': user_data},
@@ -74,7 +70,7 @@ class DatabaseManager:
             return await self.reminders_collection.find({}, {'_id': 1, 'text': 1}).to_list(length=None)
         return []
 
-    async def delete_reminder(self, reminder_id) -> bool:
+    async def delete_reminder(self, reminder_id: ObjectId) -> bool:
         if self.reminders_collection is not None:
             result = await self.reminders_collection.delete_one({'_id': reminder_id})
             return result.deleted_count > 0
@@ -82,9 +78,9 @@ class DatabaseManager:
         
     async def get_random_reminder(self):
         if self.reminders_collection is not None:
-            reminders = await self.reminders_collection.find({}, {'text': 1}).to_list(length=None)
-            if reminders:
-                return random.choice(reminders)['text']
+            pipeline = [{ "$sample": { "size": 1 } }]
+            async for doc in self.reminders_collection.aggregate(pipeline):
+                return doc.get('text')
         return None
 
     async def get_reminders_count(self) -> int:
@@ -98,7 +94,7 @@ class DatabaseManager:
             return await self.reminders_collection.find({}, {'_id': 1, 'text': 1}).skip(skip).limit(page_size).to_list(length=page_size)
         return []
 
-    # --- وظائف الإعدادات (المنطقة الزمنية) ---
+    # --- وظائف الإعدادات ---
     async def set_timezone(self, timezone: str):
         if self.settings_collection is not None:
             await self.settings_collection.update_one(
@@ -128,20 +124,17 @@ class DatabaseManager:
         return False
 
     # --- وظائف الاشتراك الإجباري ---
-    async def add_subscription_channel(self, channel_id: int, channel_title: str):
+    async def add_subscription_channel(self, channel_id: int, channel_title: str) -> ObjectId:
         if self.subscription_channels_collection is not None:
-            await self.subscription_channels_collection.update_one(
-                {'channel_id': channel_id},
-                {'$set': {'title': channel_title}},
-                upsert=True
-            )
+            result = await self.subscription_channels_collection.insert_one({'channel_id': channel_id, 'title': channel_title})
+            return result.inserted_id
 
     async def get_subscription_channels(self):
         if self.subscription_channels_collection is not None:
             return await self.subscription_channels_collection.find({}, {'channel_id': 1, 'title': 1}).to_list(length=None)
         return []
 
-    async def delete_subscription_channel(self, channel_id) -> bool:
+    async def delete_subscription_channel(self, channel_id: ObjectId) -> bool:
         if self.subscription_channels_collection is not None:
             result = await self.subscription_channels_collection.delete_one({'_id': channel_id})
             return result.deleted_count > 0
@@ -173,5 +166,4 @@ class DatabaseManager:
                 upsert=True
             )
 
-# إنشاء نسخة واحدة من مدير قاعدة البيانات لاستخدامها في كل المشروع
 db = DatabaseManager()
