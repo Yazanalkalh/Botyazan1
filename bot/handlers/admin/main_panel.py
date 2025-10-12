@@ -1,41 +1,41 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 from config import ADMIN_USER_ID
 
-# --- شرح ---
-# هذا هو "البهو الرئيسي" للمدير. يعرض لوحة التحكم الرئيسية المنظمة
-# ويوفر وظيفة "الرجوع" للعودة إلى هذه اللوحة.
-
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """يعرض لوحة التحكم الرئيسية للمدير فقط."""
-    user_id = update.effective_user.id
-    if user_id != ADMIN_USER_ID:
-        return
-
+async def admin_panel_markup() -> InlineKeyboardMarkup:
+    """ينشئ لوحة مفاتيح لوحة التحكم الرئيسية للمدير."""
+    # callback_data هنا يجب أن تتطابق مع الأنماط (patterns) في المعالجات المتخصصة
     keyboard = [
-        [InlineKeyboardButton("✍️ الردود التلقائية", callback_data="auto_replies_panel"), InlineKeyboardButton("🗓️ التذكيرات", callback_data="reminders_panel")],
-        [InlineKeyboardButton("📢 نشر للجميع", callback_data="broadcast_panel"), InlineKeyboardButton("📊 الإحصائيات", callback_data="stats_panel")],
-        [InlineKeyboardButton("📝 تعديل النصوص", callback_data="edit_texts_panel"), InlineKeyboardButton("🎨 تخصيص الواجهة", callback_data="interface_panel")],
-        [InlineKeyboardButton("🔗 الاشتراك الإجباري", callback_data="subscription_panel"), InlineKeyboardButton("🛡️ الحماية والأمان", callback_data="security_panel")],
-        [InlineKeyboardButton("🚫 إدارة الحظر", callback_data="ban_panel"), InlineKeyboardButton("📣 إدارة القنوات", callback_data="channels_panel")],
+        [
+            InlineKeyboardButton("🗓️ التذكيرات", callback_data="reminders_panel"),
+            InlineKeyboardButton("🎨 تخصيص الواجهة", callback_data="customize_interface")
+        ],
+        [
+            InlineKeyboardButton("🔐 الاشتراك الإجباري", callback_data="subscription_menu"),
+            InlineKeyboardButton("📝 تعديل النصوص", callback_data="edit_texts_menu")
+        ],
+        # --- سيتم إضافة بقية الأزرار هنا عند بنائها ---
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    text = "أهلاً بك في لوحة تحكم المدير."
-    # إذا كان قادماً من زر رجوع، يتم تعديل الرسالة، وإلا يتم إرسال رسالة جديدة
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
+    return InlineKeyboardMarkup(keyboard)
 
-# هذه الوظيفة مهمة جداً لأنها تسمح بالعودة للوحة الرئيسية من أي قائمة فرعية
-async def back_to_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """يعالج زر الرجوع إلى لوحة التحكم الرئيسية."""
-    # إعادة استخدام نفس وظيفة اللوحة الرئيسية
-    await admin_panel(update, context)
+async def admin_handler_func(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """يعرض لوحة التحكم الرئيسية عند إرسال الأمر /admin."""
+    user = update.effective_user
+    if str(user.id) != ADMIN_USER_ID:
+        return  # تجاهل إذا لم يكن المدير
 
-admin_handler = CommandHandler("admin", admin_panel)
-admin_panel_back_handler = CallbackQueryHandler(back_to_admin_panel, pattern="^admin_panel_back$")
+    reply_markup = await admin_panel_markup()
+    await update.message.reply_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
+
+async def admin_panel_back_handler_func(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """يعالج زر 'الرجوع' للعودة إلى لوحة التحكم الرئيسية."""
+    query = update.callback_query
+    await query.answer()
+    reply_markup = await admin_panel_markup()
+    await query.edit_message_text("أهلاً بك في لوحة التحكم الرئيسية.", reply_markup=reply_markup)
+
+# --- المعالجات التي يتم تصديرها من هذا الملف ---
+admin_handler = CommandHandler("admin", admin_handler_func)
+admin_panel_back_handler = CallbackQueryHandler(admin_panel_back_handler_func, pattern="^admin_panel_back$")
