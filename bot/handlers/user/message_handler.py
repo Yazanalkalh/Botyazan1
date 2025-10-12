@@ -1,45 +1,38 @@
 # -*- coding: utf-8 -*-
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 from config import ADMIN_USER_ID
-from bot.handlers.user.start import is_user_subscribed  # <-- استدعاء "حارس الأمن" الخبير
-from bot.database.manager import db
+from bot.handlers.user.start import is_user_subscribed
 
-async def message_forwarder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    يعيد توجيه أي رسالة من المستخدم إلى المدير، بعد التحقق من الاشتراك.
-    """
+async def message_forwarder_handler_func(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     
-    # --- استدعاء "حارس الأمن" الخبير أولاً ---
-    not_subscribed_channels = await is_user_subscribed(user.id, context)
-    
-    if not_subscribed_channels:
-        # إذا لم يكن مشتركاً، أرسل له رسالة الاشتراك الإجباري بدلاً من توجيه رسالته
-        force_sub_message = await db.get_text("force_sub_message", "عذراً، يجب عليك الاشتراك في القنوات التالية لاستخدام البوت:")
-        keyboard = []
-        for channel in not_subscribed_channels:
-            keyboard.append([InlineKeyboardButton(channel['title'], url=f"https://t.me/{channel['channel_id']}")])
-        keyboard.append([InlineKeyboardButton("✅ لقد اشتركت، تحقق مرة أخرى", callback_data="check_subscription")])
-        
-        await update.message.reply_text(
-            force_sub_message,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    # التحقق من الاشتراك قبل توصيل الرسالة
+    if not await is_user_subscribed(user.id, context):
+        # يمكن إرسال رسالة تذكير بالاشتراك هنا أو التجاهل بصمت
         return
 
-    # --- إذا كان مشتركاً، قم بإعادة توجيه الرسالة ---
-    try:
-        await context.bot.forward_message(
-            chat_id=ADMIN_USER_ID,
-            from_chat_id=user.id,
-            message_id=update.message.message_id
-        )
-    except Exception as e:
-        print(f"Failed to forward message from {user.id}: {e}")
-        # يمكنك إرسال رسالة للمستخدم هنا لإبلاغه بحدوث خطأ
-        # await update.message.reply_text("عذراً، لم أتمكن من توصيل رسالتك. يرجى المحاولة مرة أخرى لاحقاً.")
+    # رسالة تعريفية بالمرسل
+    user_info = f"رسالة جديدة من:\n"
+    user_info += f"الاسم: {user.first_name}\n"
+    if user.username:
+        user_info += f"المعرف: @{user.username}\n"
+    user_info += f"ID: `{user.id}`\n\n"
+    user_info += "للرد على هذه الرسالة، استخدم ميزة الرد (Reply)."
 
-# معالج لجميع أنواع الرسائل (نص، صور، فيديو، الخ) التي ليست أوامر
-message_forwarder_handler = MessageHandler(filters.ALL & ~filters.COMMAND, message_forwarder)
+    try:
+        # إرسال المعلومات أولاً
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=user_info,
+            parse_mode='MarkdownV2'
+        )
+        # ثم إعادة توجيه الرسالة الأصلية
+        await update.message.forward(chat_id=ADMIN_USER_ID)
+    except Exception as e:
+        print(f"فشل في توصيل رسالة من {user.id}: {e}")
+        # يمكن إعلام المستخدم بحدوث خطأ هنا إذا أردنا
+        await update.message.reply_text("عذراً، حدث خطأ أثناء محاولة إيصال رسالتك. يرجى المحاولة مرة أخرى لاحقاً.")
+
+message_forwarder_handler = MessageHandler(filters.ALL & ~filters.COMMAND, message_forwarder_handler_func)
