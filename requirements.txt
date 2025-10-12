@@ -1,5 +1,5 @@
-python-telegram-bot
-motor
-pytz
-hijri-converter
-Flask
+python-telegram-bot>=20.0
+motor>=3.1.1
+pytz>=2023.3
+hijri-converter>=2.3.1
+Flask>=2.3.0
