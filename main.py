@@ -12,20 +12,20 @@ import web_server
 from config import TELEGRAM_TOKEN
 from bot.database.manager import db
 
-# --- استيراد معالجات البوت ---
-# استيراد معالجات المستخدم
+# --- استيراد معالجات البوت (من أماكنها الصحيحة) ---
+# 1. معالجات المستخدم
 from bot.handlers.user.start import start_handler, check_subscription_handler
 from bot.handlers.user.callbacks import show_date_handler, show_time_handler, show_reminder_handler, contact_admin_handler
 from bot.handlers.user.message_handler import message_forwarder_handler
 
-# استيراد معالجات المدير
-from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler, reminders_panel_callback, subscription_menu_callback, texts_menu_callback, interface_menu_handler
+# 2. معالجات المدير (كل معالج من ملفه الخاص)
+from bot.handlers.admin.main_panel import admin_handler, admin_panel_back_handler
 from bot.handlers.admin.approval_handler import new_member_handler, channel_approval_handler
 from bot.handlers.admin.communication_handler import admin_reply_handler
 from bot.handlers.admin.reminders_handler import reminders_panel_handler, reminders_panel_back_handler, add_reminder_conv_handler, import_reminders_conv_handler, reminders_page_handler, delete_reminder_handler
-from bot.handlers.admin.interface_handler import change_timezone_conv_handler
+from bot.handlers.admin.interface_handler import interface_menu_handler, change_timezone_conv_handler
 from bot.handlers.admin.subscription_handler import subscription_menu_handler, subscription_menu_back_handler, add_channel_conversation_handler, subscription_page_handler, delete_subscription_channel_handler
-from bot.handlers.admin.text_editor_handler import edit_texts_conversation_handler
+from bot.handlers.admin.text_editor_handler import texts_menu_handler, edit_texts_conversation_handler
 
 # --- إعداد البوت ---
 logging.basicConfig(
@@ -41,35 +41,28 @@ async def main() -> None:
     # --- إضافة جميع المعالجات بالترتيب الصحيح ---
     handlers = [
         # معالجات المستخدم
-        start_handler,
-        check_subscription_handler,
-        show_date_handler,
-        show_time_handler,
-        show_reminder_handler,
-        contact_admin_handler,
+        start_handler, check_subscription_handler, show_date_handler,
+        show_time_handler, show_reminder_handler, contact_admin_handler,
         
-        # معالجات المدير (يجب أن تكون بعضها قبل معالج الرسائل العام)
-        admin_handler,
-        admin_panel_back_handler,
-        reminders_panel_callback,
-        subscription_menu_callback,
-        texts_menu_callback,
-        interface_menu_handler,
-        new_member_handler,
-        channel_approval_handler,
-        admin_reply_handler,
-        reminders_panel_handler,
-        reminders_panel_back_handler,
-        add_reminder_conv_handler,
-        import_reminders_conv_handler,
-        reminders_page_handler,
-        delete_reminder_handler,
-        change_timezone_conv_handler,
-        subscription_menu_handler,
-        subscription_menu_back_handler,
-        add_channel_conversation_handler,
+        # معالجات المدير (نقاط الدخول والأوامر)
+        admin_handler, new_member_handler, channel_approval_handler,
+        admin_reply_handler, 
+        
+        # معالجات أزرار لوحة التحكم (كل واحد من قسمه)
+        reminders_panel_handler, interface_menu_handler,
+        subscription_menu_handler, texts_menu_handler,
+
+        # معالجات الرجوع والصفحات
+        admin_panel_back_handler, reminders_panel_back_handler,
+        subscription_menu_back_handler, reminders_page_handler,
         subscription_page_handler,
-        delete_subscription_channel_handler,
+
+        # معالجات الحذف
+        delete_reminder_handler, delete_subscription_channel_handler,
+        
+        # معالجات المحادثات
+        add_reminder_conv_handler, import_reminders_conv_handler,
+        change_timezone_conv_handler, add_channel_conversation_handler,
         edit_texts_conversation_handler,
 
         # معالج الرسائل العام يجب أن يكون في النهاية
@@ -77,7 +70,6 @@ async def main() -> None:
     ]
     application.add_handlers(handlers)
 
-    # تشغيل البوت
     logger.info("البوت قيد التشغيل...")
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
@@ -86,19 +78,12 @@ if __name__ == '__main__':
     if not mongo_uri:
         logger.error("لم يتم العثور على متغير البيئة MONGO_URI.")
     else:
-        # 1. تشغيل خادم الويب في الخلفية
         flask_thread = threading.Thread(target=web_server.run_flask)
         flask_thread.daemon = True
         flask_thread.start()
         logger.info("خادم الويب قيد التشغيل...")
 
-        # 2. تشغيل البوت
         loop = asyncio.get_event_loop()
-        if loop.is_running():
-             # إذا كان الـ loop يعمل بالفعل (في بعض البيئات مثل notebooks)
-            task = loop.create_task(db.connect_to_database(uri=mongo_uri))
-            task.add_done_callback(lambda t: loop.create_task(main()))
-        else:
-            # التشغيل القياسي
+        if not loop.is_running():
             loop.run_until_complete(db.connect_to_database(uri=mongo_uri))
             loop.run_until_complete(main())
