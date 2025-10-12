@@ -38,14 +38,13 @@ class DatabaseManager:
             return False
 
     async def initialize_defaults(self):
-        """إنشاء المستندات الافتراضية إذا لم تكن موجودة."""
+        """إنشاء المستندات الاftراضية إذا لم تكن موجودة."""
         defaults = {
             "welcome_message": "أهلاً بك يا {user_mention}!", "date_button": "📅 التاريخ",
             "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
             "contact_button": "📨 تواصل مع الإدارة"
         }
         for key, value in defaults.items():
-            # $setOnInsert prevents overwriting existing values
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
         
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
@@ -103,7 +102,6 @@ class DatabaseManager:
 
     async def get_random_reminder(self) -> str:
         pipeline = [{"$sample": {"size": 1}}]
-        # aggregate returns an async cursor
         async for doc in self.reminders_collection.aggregate(pipeline):
             return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
