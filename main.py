@@ -12,6 +12,8 @@ from config import TELEGRAM_TOKEN, MONGO_URI
 # --- التغيير هنا: استيراد وظيفة الاكتشاف بدلاً من التسجيل المباشر ---
 from bot.utils.loader import discover_handlers
 from bot.database.manager import db
+# --- الإضافة الجديدة: استيراد فلتر المدير ---
+from bot.middlewares.admin_filter import IsAdminFilter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,6 +24,9 @@ async def start_bot():
     bot = Bot(token=TELEGRAM_TOKEN)
     storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
     dp = Dispatcher(bot, storage=storage)
+
+    # --- الإضافة الجديدة: ربط الفلتر بالبوت ---
+    dp.filters_factory.bind(IsAdminFilter)
 
     if not await db.connect_to_database(MONGO_URI):
         logger.critical("❌ فشل الاتصال بقاعدة البيانات، إيقاف البوت.")
