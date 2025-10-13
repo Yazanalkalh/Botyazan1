@@ -5,12 +5,8 @@ import time
 from aiogram import types, Dispatcher
 
 from bot.database.manager import db
-# 💡 نستورد متغير وقت البدء من ملفك الرئيسي
-# الكود التالي يحاول الاستيراد من main.py وإذا فشل يجرب app.py
-try:
-    from main import START_TIME 
-except ImportError:
-    from app import START_TIME
+# --- 💡 التعديل: نستورد الآن من الملف المركزي الجديد لكسر الحلقة المفرغة 💡 ---
+from bot.core.bot_data import START_TIME
 
 def format_uptime(duration: datetime.timedelta) -> str:
     """يحول مدة زمنية إلى نص مقروء (أيام، ساعات، دقائق)."""
@@ -23,10 +19,10 @@ def format_uptime(duration: datetime.timedelta) -> str:
         parts.append(f"{days} يوم")
     if hours > 0:
         parts.append(f"{hours} ساعة")
-    if minutes > 0 or not parts:
+    if minutes > 0 or not parts: # عرض الدقائق دائماً إذا كانت المدة أقل من ساعة
         parts.append(f"{minutes} دقيقة")
     
-    return " و ".join(parts)
+    return " و ".join(parts) if parts else "أقل من دقيقة"
 
 async def show_system_status(call: types.CallbackQuery):
     """
@@ -79,7 +75,6 @@ async def show_system_status(call: types.CallbackQuery):
         await call.message.edit_text(status_message, reply_markup=keyboard, parse_mode="Markdown")
     except Exception:
         pass
-
 
 def register_system_monitoring_handlers(dp: Dispatcher):
     """
