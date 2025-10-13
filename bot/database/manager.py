@@ -55,50 +55,23 @@ class DatabaseManager:
             "bm_menu_title": "🚫 *إدارة الحظر*", "bm_ban_button": "🚫 حظر مستخدم", "bm_unban_button": "✅ إلغاء حظر", "bm_view_button": "📖 عرض المحظورين", "bm_ask_for_user_id": "🆔 أرسل ID المستخدم للحظر.", "bm_ask_for_unban_user_id": "🆔 أرسل ID المستخدم لإلغاء الحظر.", "bm_user_banned_success": "🚫 تم حظر `{user_id}`.", "bm_user_already_banned": "⚠️ `{user_id}` محظور بالفعل.", "bm_user_unbanned_success": "✅ تم إلغاء حظر `{user_id}`.", "bm_user_not_banned": "⚠️ `{user_id}` ليس محظوراً.", "bm_invalid_user_id": "❌ ID غير صالح.", "bm_no_banned_users": "لا يوجد محظورين.",
             "bc_ask_for_message": "📣 *نشر للجميع*", "bc_confirmation": "⏳ سيتم الإرسال إلى `{count}` مستخدم. هل أنت متأكد؟", "bc_confirm_button": "✅ نعم، ابدأ", "bc_cancel_button": "❌ إلغاء", "bc_started": "🚀 بدأت عملية النشر...", "bc_progress": "⏳ جاري النشر...\nنجح: `{success}` | فشل: `{failed}` | متبقي: `{remaining}`", "bc_finished": "🏁 اكتمل النشر!\n\n✅ نجح: `{success}` | ❌ فشل: `{failed}`",
             "ui_menu_title": "🎨 *تخصيص الواجهة*", "ui_edit_date_button": "📅 تعديل زر التاريخ", "ui_edit_time_button": "⏰ تعديل زر الساعة", "ui_edit_reminder_button": "📿 تعديل زر الأذكار", "ui_edit_timezone_button": "🌍 تعديل المنطقة الزمنية", "ui_ask_for_new_text": "📝 أرسل الآن النص الجديد لـ *{item_name}*.", "ui_text_updated_success": "✅ تم تحديث نص *{item_name}* بنجاح.", "ui_ask_for_tz_identifier": "🌐 *الخطوة 1:* أرسل معرّف المنطقة الزمنية (مثال: `Asia/Riyadh`).", "ui_ask_for_tz_display_name": "✍️ *الخطوة 2:* أرسل الاسم الذي سيظهر للمستخدم (مثال: `بتوقيت صنعاء`).", "ui_tz_updated_success": "✅ تم تحديث المنطقة الزمنية.",
+            "sec_menu_title": "🛡️ *الحماية والأمان*", "sec_bot_status_button": "🤖 حالة البوت", "sec_media_filtering_button": "🖼️ منع الوسائط", "sec_antiflood_button": "⏱️ منع التكرار", "sec_rejection_message_button": "✍️ تعديل رسالة الرفض", "sec_bot_active": "🟢 يعمل", "sec_bot_inactive": "🔴 متوقف", "sec_media_menu_title": "🖼️ *منع الوسائط*", "sec_media_photo": "🖼️ الصور", "sec_media_video": "📹 الفيديو", "sec_media_link": "🔗 الروابط", "sec_media_sticker": "🎭 الملصقات", "sec_media_document": "📁 الملفات", "sec_media_audio": "🎵 الصوتيات", "sec_media_voice": "🎤 الرسائل الصوتية", "sec_allowed": "✅ مسموح", "sec_blocked": "❌ ممنوع", "sec_rejection_msg_ask": "✍️ أرسل رسالة الرفض الجديدة.", "sec_rejection_msg_updated": "✅ تم تحديث رسالة الرفض.", "security_rejection_message": "عذراً، إرسال هذا النوع من الرسائل غير مسموح به.",
 
-            # --- الإضافة الجديدة: نصوص واجهة الحماية والأمان ---
-            "sec_menu_title": "🛡️ *الحماية والأمان*",
-            "sec_bot_status_button": "🤖 حالة البوت",
-            "sec_media_filtering_button": "🖼️ منع الوسائط",
-            "sec_antiflood_button": "⏱️ منع التكرار",
-            "sec_rejection_message_button": "✍️ تعديل رسالة الرفض",
-            "sec_bot_active": "🟢 يعمل",
-            "sec_bot_inactive": "🔴 متوقف",
-            "sec_media_menu_title": "🖼️ *منع الوسائط المتعددة*\n\nاختر أنواع الرسائل التي تريد منعها.",
-            "sec_media_photo": "🖼️ الصور",
-            "sec_media_video": "📹 الفيديو",
-            "sec_media_link": "🔗 الروابط",
-            "sec_media_sticker": "🎭 الملصقات",
-            "sec_media_document": "📁 الملفات",
-            "sec_media_audio": "🎵 الصوتيات",
-            "sec_media_voice": "🎤 الرسائل الصوتية",
-            "sec_allowed": "✅ مسموح",
-            "sec_blocked": "❌ ممنوع",
-            "sec_rejection_msg_ask": "✍️ أرسل الآن رسالة الرفض الجديدة التي ستظهر للمستخدم عند إرساله لوسائط ممنوعة.",
-            "sec_rejection_msg_updated": "✅ تم تحديث رسالة الرفض بنجاح.",
-            "security_rejection_message": "عذراً، إرسال هذا النوع من الرسائل غير مسموح به.", # الرسالة الافتراضية
+            # --- الإضافة الجديدة: نصوص واجهة إدارة الذاكرة ---
+            "mm_menu_title": "🗑️ *إدارة الذاكرة*\n\nتستخدم هذه الواجهة لحذف الذاكرة المؤقتة (FSM State) لمستخدم عالق في محادثة.",
+            "mm_clear_user_state_button": "👤 حذف ذاكرة مستخدم",
+            "mm_ask_for_user_id": "🆔 أرسل الآن المعرف الرقمي (ID) للمستخدم الذي تريد حذف ذاكرته المؤقتة.",
+            "mm_state_cleared_success": "✅ تم حذف الذاكرة المؤقتة للمستخدم `{user_id}` بنجاح.",
+            "mm_state_not_found": "ℹ️ لم يتم العثور على ذاكرة مؤقتة للمستخدم `{user_id}` (أو أنها فارغة بالفعل).",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
             
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
-
-        # إضافة إعدادات الحماية الافتراضية
-        default_security = {
-            "bot_status": "active",
-            "blocked_media": {
-                "photo": False, "video": False, "link": False, "sticker": False,
-                "document": False, "audio": False, "voice": False,
-            }
-        }
-        await self.settings_collection.update_one(
-            {"_id": "security_settings"},
-            {"$setOnInsert": default_security},
-            upsert=True
-        )
+        default_security = {"bot_status": "active", "blocked_media": {"photo": False, "video": False, "link": False, "sticker": False, "document": False, "audio": False, "voice": False}}
+        await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": default_security}, upsert=True)
 
     # --- (الوظائف السابقة موجودة هنا دون تغيير) ---
-    # ... وظائف الردود التلقائية، التذكيرات، منشورات القناة، إدارة القنوات، الحظر، النشر، تخصيص الواجهة ...
     async def add_auto_reply(self, keyword: str, message: dict): #...
         if not self.is_connected(): return
         keyword_lower = keyword.lower()
@@ -200,46 +173,25 @@ class DatabaseManager:
         doc = await self.settings_collection.find_one({"_id": "timezone"})
         if doc: return {"identifier": doc.get("identifier", "Asia/Riyadh"), "display_name": doc.get("display_name", "بتوقيت الرياض")}
         return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
-
-    # --- الإضافة الجديدة: وظائف الحماية والأمان ---
-    async def get_security_settings(self):
-        """يجلب جميع إعدادات الحماية في استدعاء واحد."""
+    async def get_security_settings(self): #...
         if not self.is_connected(): return {}
         doc = await self.settings_collection.find_one({"_id": "security_settings"})
-        return doc or {} # إرجاع قاموس فارغ إذا لم يتم العثور على الإعدادات
-
-    async def toggle_bot_status(self):
-        """يغير حالة البوت بين 'active' و 'inactive'."""
+        return doc or {}
+    async def toggle_bot_status(self): #...
         if not self.is_connected(): return
         current_settings = await self.get_security_settings()
         new_status = "inactive" if current_settings.get("bot_status", "active") == "active" else "active"
-        await self.settings_collection.update_one(
-            {"_id": "security_settings"},
-            {"$set": {"bot_status": new_status}},
-            upsert=True
-        )
+        await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {"bot_status": new_status}}, upsert=True)
         return new_status
-
-    async def toggle_media_blocking(self, media_type: str):
-        """يغير حالة الحظر لنوع وسائط معين."""
+    async def toggle_media_blocking(self, media_type: str): #...
         if not self.is_connected(): return
-        # التأكد من أن media_type هو أحد المفاتيح الصالحة
         valid_keys = ["photo", "video", "link", "sticker", "document", "audio", "voice"]
-        if media_type not in valid_keys:
-            return None
-        
+        if media_type not in valid_keys: return None
         current_settings = await self.get_security_settings()
         current_blocked_media = current_settings.get("blocked_media", {})
         is_currently_blocked = current_blocked_media.get(media_type, False)
-        
-        await self.settings_collection.update_one(
-            {"_id": "security_settings"},
-            {"$set": {f"blocked_media.{media_type}": not is_currently_blocked}},
-            upsert=True
-        )
+        await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {f"blocked_media.{media_type}": not is_currently_blocked}}, upsert=True)
         return not is_currently_blocked
-
-    # --- (بقية الوظائف موجودة هنا دون تغيير) ---
     async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int): #...
         if not self.is_connected(): return
         await self.forwarding_map_collection.insert_one({"_id": admin_message_id, "user_id": user_id, "user_message_id": user_message_id})
