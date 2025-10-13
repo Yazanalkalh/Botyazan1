@@ -1,12 +1,6 @@
-import sys
-import os
-# --- الإضافة الجديدة: إجبار بايثون على رؤية مجلدات المشروع ---
-# هذا السطر يضيف المجلد الرئيسي للمشروع إلى مسار البحث لحل مشكلة ModuleNotFoundError
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-# ---------------------------------------------------------
-
 # -*- coding: utf-8 -*-
 
+import os
 import asyncio
 import logging
 from aiohttp import web
@@ -40,24 +34,16 @@ async def start_bot():
         return
 
     # --- هذا هو الحل النهائي لمشكلة الترتيب ---
-    
-    # 1. اكتشاف كل "الموظفين" المتاحين
     all_handler_modules = discover_handlers()
-    
-    # 2. تسجيلهم بالترتيب الصحيح لضمان الأولوية
     logger.info("🚦 بدء تسجيل المعالجات بالترتيب الصحيح...")
     
-    # تسجيل كل شيء باستثناء المعالج العام للرسائل
     for module in all_handler_modules:
-        if module.__name__.endswith("messages"):
-            continue 
-        
+        if module.__name__.endswith("messages"): continue 
         for attr_name in dir(module):
             if attr_name.startswith("register_"):
                 getattr(module, attr_name)(dp)
                 logger.info(f"✅ [أولوية عالية] تم تسجيل: {attr_name} من {module.__name__}")
 
-    # تسجيل المعالج العام للرسائل (catch-all) في النهاية دائماً
     for module in all_handler_modules:
         if module.__name__.endswith("messages"):
             for attr_name in dir(module):
