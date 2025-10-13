@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
 import datetime
+import asyncio # استيراد جديد لتشغيل المهام بشكل متزامن
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +57,15 @@ class DatabaseManager:
             "bc_ask_for_message": "📣 *نشر للجميع*", "bc_confirmation": "⏳ سيتم الإرسال إلى `{count}` مستخدم. هل أنت متأكد؟", "bc_confirm_button": "✅ نعم، ابدأ", "bc_cancel_button": "❌ إلغاء", "bc_started": "🚀 بدأت عملية النشر...", "bc_progress": "⏳ جاري النشر...\nنجح: `{success}` | فشل: `{failed}` | متبقي: `{remaining}`", "bc_finished": "🏁 اكتمل النشر!\n\n✅ نجح: `{success}` | ❌ فشل: `{failed}`",
             "ui_menu_title": "🎨 *تخصيص الواجهة*", "ui_edit_date_button": "📅 تعديل زر التاريخ", "ui_edit_time_button": "⏰ تعديل زر الساعة", "ui_edit_reminder_button": "📿 تعديل زر الأذكار", "ui_edit_timezone_button": "🌍 تعديل المنطقة الزمنية", "ui_ask_for_new_text": "📝 أرسل الآن النص الجديد لـ *{item_name}*.", "ui_text_updated_success": "✅ تم تحديث نص *{item_name}* بنجاح.", "ui_ask_for_tz_identifier": "🌐 *الخطوة 1:* أرسل معرّف المنطقة الزمنية (مثال: `Asia/Riyadh`).", "ui_ask_for_tz_display_name": "✍️ *الخطوة 2:* أرسل الاسم الذي سيظهر للمستخدم (مثال: `بتوقيت صنعاء`).", "ui_tz_updated_success": "✅ تم تحديث المنطقة الزمنية.",
             "sec_menu_title": "🛡️ *الحماية والأمان*", "sec_bot_status_button": "🤖 حالة البوت", "sec_media_filtering_button": "🖼️ منع الوسائط", "sec_antiflood_button": "⏱️ منع التكرار", "sec_rejection_message_button": "✍️ تعديل رسالة الرفض", "sec_bot_active": "🟢 يعمل", "sec_bot_inactive": "🔴 متوقف", "sec_media_menu_title": "🖼️ *منع الوسائط*", "sec_media_photo": "🖼️ الصور", "sec_media_video": "📹 الفيديو", "sec_media_link": "🔗 الروابط", "sec_media_sticker": "🎭 الملصقات", "sec_media_document": "📁 الملفات", "sec_media_audio": "🎵 الصوتيات", "sec_media_voice": "🎤 الرسائل الصوتية", "sec_allowed": "✅ مسموح", "sec_blocked": "❌ ممنوع", "sec_rejection_msg_ask": "✍️ أرسل رسالة الرفض الجديدة.", "sec_rejection_msg_updated": "✅ تم تحديث رسالة الرفض.", "security_rejection_message": "عذراً، إرسال هذا النوع من الرسائل غير مسموح به.",
+            "mm_menu_title": "🗑️ *إدارة الذاكرة*", "mm_clear_user_state_button": "👤 حذف ذاكرة مستخدم", "mm_ask_for_user_id": "🆔 أرسل ID المستخدم لحذف ذاكرته.", "mm_state_cleared_success": "✅ تم حذف الذاكرة المؤقتة لـ `{user_id}`.", "mm_state_not_found": "ℹ️ لا توجد ذاكرة مؤقتة لـ `{user_id}`.",
 
-            # --- الإضافة الجديدة: نصوص واجهة إدارة الذاكرة ---
-            "mm_menu_title": "🗑️ *إدارة الذاكرة*\n\nتستخدم هذه الواجهة لحذف الذاكرة المؤقتة (FSM State) لمستخدم عالق في محادثة.",
-            "mm_clear_user_state_button": "👤 حذف ذاكرة مستخدم",
-            "mm_ask_for_user_id": "🆔 أرسل الآن المعرف الرقمي (ID) للمستخدم الذي تريد حذف ذاكرته المؤقتة.",
-            "mm_state_cleared_success": "✅ تم حذف الذاكرة المؤقتة للمستخدم `{user_id}` بنجاح.",
-            "mm_state_not_found": "ℹ️ لم يتم العثور على ذاكرة مؤقتة للمستخدم `{user_id}` (أو أنها فارغة بالفعل).",
+            # --- الإضافة الجديدة: نصوص واجهة الإحصائيات ---
+            "stats_title": "📊 *إحصائيات البوت*",
+            "stats_total_users": "👤 إجمالي المستخدمين",
+            "stats_banned_users": "🚫 المستخدمون المحظورون",
+            "stats_auto_replies": "📝 الردود التلقائية",
+            "stats_reminders": "⏰ التذكيرات",
+            "stats_refresh_button": "🔄 تحديث",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
@@ -72,6 +75,7 @@ class DatabaseManager:
         await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": default_security}, upsert=True)
 
     # --- (الوظائف السابقة موجودة هنا دون تغيير) ---
+    # ... وظائف الردود التلقائية، التذكيرات، منشورات القناة، إدارة القنوات، الحظر، النشر، تخصيص الواجهة، الحماية، الذاكرة ...
     async def add_auto_reply(self, keyword: str, message: dict): #...
         if not self.is_connected(): return
         keyword_lower = keyword.lower()
@@ -192,6 +196,35 @@ class DatabaseManager:
         is_currently_blocked = current_blocked_media.get(media_type, False)
         await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {f"blocked_media.{media_type}": not is_currently_blocked}}, upsert=True)
         return not is_currently_blocked
+
+    # --- الإضافة الجديدة: وظيفة جلب الإحصائيات ---
+    async def get_bot_statistics(self) -> dict:
+        """
+        تجلب إحصائيات متنوعة من قاعدة البيانات في استدعاء واحد فعال.
+        """
+        if not self.is_connected():
+            return {"total_users": 0, "banned_users": 0, "auto_replies": 0, "reminders": 0}
+
+        # إنشاء قائمة بالمهام التي سيتم تنفيذها بشكل متزامن
+        tasks = [
+            self.users_collection.count_documents({}),
+            self.banned_users_collection.count_documents({}),
+            self.auto_replies_collection.count_documents({}),
+            self.reminders_collection.count_documents({}),
+        ]
+
+        # تشغيل جميع مهام العد في نفس الوقت وانتظار النتائج
+        results = await asyncio.gather(*tasks)
+
+        # إعادة النتائج في قاموس منظم
+        return {
+            "total_users": results[0],
+            "banned_users": results[1],
+            "auto_replies": results[2],
+            "reminders": results[3],
+        }
+
+    # --- (بقية الوظائف موجودة هنا دون تغيير) ---
     async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int): #...
         if not self.is_connected(): return
         await self.forwarding_map_collection.insert_one({"_id": admin_message_id, "user_id": user_id, "user_message_id": user_message_id})
