@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import asyncio
-from aiogram import types, Dispatcher, Bot
+from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils.exceptions import BotBlocked, ChatNotFound, UserDeactivated, TelegramAPIError
@@ -25,7 +25,6 @@ async def broadcast_start(call: types.CallbackQuery, state: FSMContext):
 
 async def broadcast_message_received(message: types.Message, state: FSMContext):
     """Receives the message and asks for confirmation."""
-    # Save message details to state for later use
     await state.update_data(
         message_to_send={'chat_id': message.chat.id, 'message_id': message.message_id}
     )
@@ -42,21 +41,30 @@ async def broadcast_message_received(message: types.Message, state: FSMContext):
     await message.answer(text, reply_markup=keyboard)
     await Broadcast.next()
 
-# --- 2. Confirmation and Execution ---
-async def broadcast_confirmed(call: types.CallbackQuery, state: FSMContext, bot: Bot):
-    """Handles the broadcast after admin confirmation."""
+# --- 2. Confirmation and Execution (النسخة المصححة) ---
+async def broadcast_confirmed(call: types.CallbackQuery, state: FSMContext):
+    """
+    Handles the broadcast after admin confirmation.
+    Responds instantly and then starts the heavy work.
+    """
+    # ===> الخطوة 1: الاستجابة الفورية للمدير <===
+    await call.answer()
+    await call.message.edit_text(await db.get_text("bc_started"))
+    
+    # ===> الخطوة 2: استرجاع البيانات اللازمة <===
     data = await state.get_data()
     await state.finish()
-
+    
     message_to_send = data.get('message_to_send')
+    bot = call.bot # الإصلاح: نحصل على كائن البوت بالطريقة الصحيحة
+
     if not message_to_send:
         await call.message.edit_text("حدث خطأ، يرجى المحاولة مرة أخرى.")
         return
 
+    # ===> الخطوة 3: القيام بالعملية الطويلة (جمع المستخدمين والنشر) <===
     users = await db.get_all_users()
     total_users = len(users)
-    
-    await call.message.edit_text(await db.get_text("bc_started"))
     
     success_count = 0
     failed_count = 0
@@ -73,7 +81,7 @@ async def broadcast_confirmed(call: types.CallbackQuery, state: FSMContext, bot:
             failed_count += 1
             print(f"Failed to send to {user_id}: {e}")
         
-        # To avoid hitting Telegram limits and to provide progress updates
+        # تحديث الحالة كل 25 مستخدم لتجنب إغراق واجهة تليجرام
         if (i + 1) % 25 == 0:
             progress_text = (await db.get_text("bc_progress")).format(
                 success=success_count,
@@ -82,13 +90,16 @@ async def broadcast_confirmed(call: types.CallbackQuery, state: FSMContext, bot:
                 total=total_users
             )
             try:
-                await call.message.edit_text(progress_text)
-            except TelegramAPIError: # In case the message is not modified
+                # نستخدم edit_text_safe لتجنب الأخطاء إذا لم تتغير الرسالة
+                if call.message.text != progress_text:
+                    await call.message.edit_text(progress_text)
+            except TelegramAPIError:
                 pass
         
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05) # تقليل طفيف في مدة الانتظار لتسريع العملية
 
     final_text = (await db.get_text("bc_finished")).format(success=success_count, failed=failed_count)
+    # نرسل النتيجة النهائية كرسالة جديدة للحفاظ على سجل واضح
     await call.message.answer(final_text)
 
 async def broadcast_cancelled(call: types.CallbackQuery, state: FSMContext):
@@ -100,14 +111,7 @@ async def broadcast_cancelled(call: types.CallbackQuery, state: FSMContext):
 # --- Registration Function ---
 def register_broadcast_handlers(dp: Dispatcher):
     """Registers all handlers for the broadcast feature."""
-    # The callback from the main panel is now a button, not a command.
-    # It should be handled by the panel.py file, which then calls this function.
-    # For simplicity, we can also register it directly here.
-    
-    # We will assume the button in `panel.py` has `callback_data="admin:broadcast"`
     dp.register_callback_query_handler(broadcast_start, text="admin:broadcast", is_admin=True, state="*")
-    
     dp.register_message_handler(broadcast_message_received, state=Broadcast.waiting_for_message, is_admin=True, content_types=types.ContentTypes.ANY)
-    
     dp.register_callback_query_handler(broadcast_confirmed, text="bc:confirm", is_admin=True, state=Broadcast.waiting_for_confirmation)
     dp.register_callback_query_handler(broadcast_cancelled, text="bc:cancel", is_admin=True, state=Broadcast.waiting_for_confirmation)
