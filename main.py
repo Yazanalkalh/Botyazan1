@@ -3,14 +3,12 @@
 import os
 import asyncio
 import logging
-import datetime # <-- الإضافة الأولى
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 
-# --- 💡 الإضافة الثانية: تسجيل وقت بدء تشغيل البوت 💡 ---
-START_TIME = datetime.datetime.now()
+# --- لم نعد بحاجة لتعريف وقت البدء هنا ---
 
 from config import TELEGRAM_TOKEN, MONGO_URI
 # --- استيراد المكونات الأساسية ---
