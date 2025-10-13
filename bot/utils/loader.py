@@ -7,30 +7,25 @@ from aiogram import Dispatcher
 
 HANDLERS_PATH = "bot.handlers"
 
-def auto_register_handlers(dp: Dispatcher):
+def discover_handlers():
     """
-    يقوم بالبحث العميق في مجلد المعالجات وجميع مجلداته الفرعية،
-    ويستدعي أي وظيفة تبدأ بـ "register_" لتسجيلها.
+    يكتشف كل وحدات المعالجات ويعيدها كقائمة لتسجيلها لاحقاً بالترتيب الصحيح.
     """
-    logging.info("🚀 بدء التحميل التلقائي لجميع المعالجات...")
+    logging.info("🔎 اكتشاف جميع وحدات المعالجات...")
+    modules = []
     try:
         handlers_module = importlib.import_module(HANDLERS_PATH)
+        for _, module_name, _ in pkgutil.walk_packages(
+            path=handlers_module.__path__,
+            prefix=handlers_module.__name__ + "."
+        ):
+            try:
+                module = importlib.import_module(module_name)
+                modules.append(module)
+            except Exception as e:
+                logging.error(f"⚠️ فشل تحميل الوحدة {module_name}: {e}")
     except ModuleNotFoundError:
-        logging.error(f"❌ لم يتم العثور على مجلد المعالجات الرئيسي: {HANDLERS_PATH}")
-        return
-
-    for finder, module_name, is_pkg in pkgutil.walk_packages(
-        path=handlers_module.__path__,
-        prefix=handlers_module.__name__ + "."
-    ):
-        try:
-            module = importlib.import_module(module_name)
-            for attr_name in dir(module):
-                if attr_name.startswith("register_"):
-                    register_func = getattr(module, attr_name)
-                    if callable(register_func):
-                        logging.info(f"🔗 تفعيل '{attr_name}' من {module_name}")
-                        register_func(dp)
-        except Exception as e:
-            logging.error(f"⚠️ فشل تحميل المعالج من {module_name}: {e}")
-    logging.info("✅ اكتمل التحميل التلقائي بنجاح.")
+        logging.error(f"❌ لم يتم العثور على مجلد المعالجات: {HANDLERS_PATH}")
+    
+    logging.info(f"💡 تم اكتشاف {len(modules)} وحدة معالج.")
+    return modules
