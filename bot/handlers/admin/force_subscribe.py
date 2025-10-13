@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from aiogram import types, Dispatcher, Bot
+from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils.callback_data import CallbackData
@@ -52,9 +52,12 @@ async def add_channel_start(call: types.CallbackQuery):
     await AddFSChannel.waiting_for_channel_id.set()
     await call.answer()
 
-async def add_channel_id_received(message: types.Message, state: FSMContext, bot: Bot):
+# --- 💡 تم إصلاح هذه الدالة 💡 ---
+async def add_channel_id_received(message: types.Message, state: FSMContext):
     """Receives the channel ID, verifies it, and saves it."""
     channel_id_str = message.text.strip()
+    # الإصلاح: نحصل على كائن البوت من الرسالة نفسها
+    bot = message.bot
     
     try:
         chat = await bot.get_chat(channel_id_str)
@@ -90,9 +93,11 @@ async def view_channels(call: types.CallbackQuery):
     text = "📖 *قائمة قنوات الاشتراك الإجباري:*\n\n"
     for channel in channels:
         db_id = str(channel['_id'])
-        text += f"- {channel['title']} (`@{channel['username']}`)\n"
+        # التأكد من وجود اسم المستخدم قبل عرضه لتجنب الأخطاء
+        username = channel.get('username', 'N/A')
+        text += f"- {channel.get('title', 'N/A')} (`@{username}`)\n"
         keyboard.add(types.InlineKeyboardButton(
-            text=f"🗑️ حذف `@{channel['username']}`",
+            text=f"🗑️ حذف `@{username}`",
             callback_data=fs_delete_cb.new(id=db_id)
         ))
     
