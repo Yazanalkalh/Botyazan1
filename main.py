@@ -9,11 +9,12 @@ from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 
 from config import TELEGRAM_TOKEN, MONGO_URI
-# --- التغيير هنا: استيراد وظيفة الاكتشاف بدلاً من التسجيل المباشر ---
+# --- استيراد المكونات الأساسية ---
 from bot.utils.loader import discover_handlers
 from bot.database.manager import db
-# --- الإضافة الجديدة: استيراد فلتر المدير ---
 from bot.middlewares.admin_filter import IsAdminFilter
+# --- الإضافة الجديدة: استيراد وسيط الحظر ---
+from bot.middlewares.ban_middleware import BanMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,8 +26,10 @@ async def start_bot():
     storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
     dp = Dispatcher(bot, storage=storage)
 
-    # --- الإضافة الجديدة: ربط الفلتر بالبوت ---
+    # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
+    # --- الإضافة الجديدة: تفعيل جدار الحماية الخاص بالحظر ---
+    dp.middleware.setup(BanMiddleware())
 
     if not await db.connect_to_database(MONGO_URI):
         logger.critical("❌ فشل الاتصال بقاعدة البيانات، إيقاف البوت.")
@@ -42,9 +45,8 @@ async def start_bot():
     
     # تسجيل كل شيء باستثناء المعالج العام للرسائل
     for module in all_handler_modules:
-        # اسم الملف الخاص بالرسائل العامة
         if module.__name__.endswith("messages"):
-            continue # سنتجاوز هذا الآن ونسجله في النهاية
+            continue 
         
         for attr_name in dir(module):
             if attr_name.startswith("register_"):
@@ -54,12 +56,11 @@ async def start_bot():
     # تسجيل المعالج العام للرسائل (catch-all) في النهاية دائماً
     for module in all_handler_modules:
         if module.__name__.endswith("messages"):
-            # البحث عن وظيفة التسجيل داخله
             for attr_name in dir(module):
                 if attr_name.startswith("register_"):
                     getattr(module, attr_name)(dp)
                     logger.info(f"✅ [أولوية منخفضة] تم تسجيل: {attr_name} من {module.__name__}")
-            break # نتوقف بعد تسجيله مرة واحدة
+            break
 
     logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
     await dp.start_polling()
