@@ -3,10 +3,14 @@
 import os
 import asyncio
 import logging
+import datetime # <-- الإضافة الأولى
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
+
+# --- 💡 الإضافة الثانية: تسجيل وقت بدء تشغيل البوت 💡 ---
+START_TIME = datetime.datetime.now()
 
 from config import TELEGRAM_TOKEN, MONGO_URI
 # --- استيراد المكونات الأساسية ---
@@ -14,7 +18,6 @@ from bot.utils.loader import discover_handlers
 from bot.database.manager import db
 from bot.middlewares.admin_filter import IsAdminFilter
 from bot.middlewares.ban_middleware import BanMiddleware
-# --- تم حذف وسيط الحماية والأمان من هنا ---
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +32,6 @@ async def start_bot():
     # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
     dp.middleware.setup(BanMiddleware())
-    # --- تم حذف وسيط الحماية والأمان من هنا ---
 
     if not await db.connect_to_database(MONGO_URI):
         logger.critical("❌ فشل الاتصال بقاعدة البيانات، إيقاف البوت.")
