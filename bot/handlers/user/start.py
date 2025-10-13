@@ -9,7 +9,6 @@ from config import ADMIN_USER_ID
 async def notify_admin_of_new_user(user: types.User, bot: Bot):
     """يرسل إشعاراً للمدير عند دخول مستخدم جديد."""
     try:
-        # استخدام HTML لضمان الاستقرار وتجنب أخطاء التنسيق
         user_link = f'<a href="tg://user?id={user.id}">{user.full_name}</a>'
         username = f"@{user.username}" if user.username else "لا يوجد"
         
@@ -34,21 +33,23 @@ async def is_user_subscribed(user_id: int, bot: Bot) -> bool:
     """
     required_channels = await db.get_subscription_channels()
     if not required_channels:
-        return True # لا توجد قنوات إلزامية = الجميع مسموح له بالدخول
+        return True
 
     for channel_username in required_channels:
         try:
             member = await bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
             if member.status not in ["creator", "administrator", "member"]:
-                return False # المستخدم ليس عضواً
+                return False
         except (ChatNotFound, BadRequest):
-            print(f"تحذير: لا يمكن التحقق من القناة @{channel_username}. قد يكون البوت ليس مشرفاً فيها.")
-            continue # نتجاهل القناة التي لا يمكن التحقق منها
+            print(f"تحذير: لا يمكن التحقق من القناة @{channel_username}.")
+            continue
     return True
 
-async def show_main_menu(message: types.Message, edit_mode: bool = False):
+# --- 💡 تم تحديث هذه الدالة بالكامل 💡 ---
+async def show_main_menu(message: types.Message, user: types.User, edit_mode: bool = False):
     """
-    وظيفة مركزية لعرض "اللوح السحري" (القائمة الرئيسية).
+    وظيفة مركزية ومحسّنة لعرض القائمة الرئيسية.
+    تدعم الآن الهاشتاقات المخصصة في رسالة الترحيب.
     """
     keyboard = types.InlineKeyboardMarkup(row_width=3)
     date_button_text = await db.get_text("date_button")
@@ -60,15 +61,29 @@ async def show_main_menu(message: types.Message, edit_mode: bool = False):
         types.InlineKeyboardButton(text=reminder_button_text, callback_data="show_reminder")
     )
 
-    welcome_text = (await db.get_text("welcome_message")).format(user_mention=message.chat.get_mention(as_html=True))
+    # 1. جلب قالب الرسالة الخام من قاعدة البيانات
+    template = await db.get_text("welcome_message")
+
+    # 2. تجهيز القيم التي سيتم استبدالها
+    name_user_mention = user.get_mention(as_html=True)  # <a href="tg://user?id=123">الاسم الكامل</a>
+    username_mention = f"@{user.username}" if user.username else "لا يوجد"
+    first_name = user.first_name
+    user_id_str = str(user.id)
+
+    # 3. تنفيذ عملية الاستبدال الذكية
+    processed_text = template.replace("#name_user", name_user_mention)
+    processed_text = processed_text.replace("#username", username_mention)
+    processed_text = processed_text.replace("#name", first_name)
+    processed_text = processed_text.replace("#id", user_id_str)
     
+    # 4. إرسال الرس النهائية مع استخدام وضع HTML لدعم الروابط والتنسيقات
     if edit_mode:
         try:
-            await message.edit_text(text=welcome_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+            await message.edit_text(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
         except Exception:
-            pass # نتجاهل الخطأ إذا لم يتغير محتوى الرسالة
+            pass # نتجاهل الأخطاء مثل "الرسالة لم تتغير"
     else:
-        await message.answer(text=welcome_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+        await message.answer(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
 async def show_subscription_message(message: types.Message):
     """يعرض رسالة وقنوات الاشتراك الإجباري."""
@@ -89,15 +104,18 @@ async def start_command(message: types.Message):
         await notify_admin_of_new_user(user, message.bot)
     
     if await is_user_subscribed(user.id, message.bot):
-        await show_main_menu(message)
+        # 💡 التعديل: نمرر كائن المستخدم للدالة
+        await show_main_menu(message, user=user)
     else:
         await show_subscription_message(message)
 
 async def check_subscription_callback(call: types.CallbackQuery):
     """يستجيب لزر "تحقق الآن"."""
     await call.answer(text="جاري التحقق من اشتراكك...", show_alert=False)
-    if await is_user_subscribed(call.from_user.id, call.bot):
-        await show_main_menu(call.message, edit_mode=True)
+    user = call.from_user
+    if await is_user_subscribed(user.id, call.bot):
+        # 💡 التعديل: نمرر كائن المستخدم للدالة
+        await show_main_menu(call.message, user=user, edit_mode=True)
     else:
         await call.answer(text="عذراً، لم تشترك في جميع القنوات بعد. يرجى المحاولة مرة أخرى.", show_alert=True)
 
