@@ -1,73 +1,61 @@
 # -*- coding: utf-8 -*-
 
-import os
 import asyncio
 import logging
-from aiohttp import web
+import threading
 
-from aiogram import Bot, Dispatcher
-# --- هذا هو التصحيح الجذري والنهائي ---
+from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 
+import web_server
 from config import TELEGRAM_TOKEN, MONGO_URI
-from bot.utils.loader import auto_register_handlers
 from bot.database.manager import db
+
+# --- استيراد وظائف التسجيل ---
+from bot.handlers.user.start import register_start_handlers
+from bot.handlers.user.callbacks import register_callback_handlers
+from bot.handlers.user.messages import register_messages_handler # تم التغيير هنا
+from bot.handlers.admin.communication_handler import register_communication_handlers
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- دالة لتشغيل البوت ---
-async def start_bot():
-    """يقوم بإعداد وتشغيل البوت."""
-    bot = Bot(token=TELEGRAM_TOKEN)
+storage = MongoStorage(uri=MONGO_URI)
+bot = Bot(token=TELEGRAM_TOKEN)
+dp = Dispatcher(bot, storage=storage)
+
+async def on_startup(dispatcher: Dispatcher):
+    """يتم تنفيذ هذه الوظيفة عند بدء تشغيل البوت."""
+    logger.info("الاتصال بقاعدة البيانات...")
+    await db.connect_to_database(uri=MONGO_URI)
     
-    # --- استخدام التخزين الدائم بالطريقة الرسمية والصحيحة ---
-    storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
+    # --- تسجيل المعالجات بالترتيب الصحيح ---
     
-    dp = Dispatcher(bot, storage=storage)
+    # 1. المعالجات المتخصصة أولاً (الأوامر والأزرار)
+    register_start_handlers(dispatcher)
+    register_callback_handlers(dispatcher)
+    
+    # 2. معالجات المدير
+    register_communication_handlers(dispatcher)
+    
+    # 3. المعالج العام (catch-all) يجب أن يكون الأخير دائماً
+    register_messages_handler(dispatcher)
+    
+    logger.info("البوت جاهز للعمل بشكل كامل.")
 
-    # الاتصال بقاعدة البيانات الخاصة بنا
-    if not await db.connect_to_database(MONGO_URI):
-        logger.critical("❌ فشل الاتصال بقاعدة البيانات، لا يمكن تشغيل البوت.")
-        return
+# ... (بقية الكود يبقى كما هو)
+async def on_shutdown(dispatcher: Dispatcher):
+    logger.warning('إيقاف البوت...')
 
-    # استدعاء "المفتش الآلي" لتسجيل كل المعالجات
-    auto_register_handlers(dp)
+if __name__ == '__main__':
+    flask_thread = threading.Thread(target=web_server.run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    logger.info("خادم الويب Flask قيد التشغيل...")
 
-    # بدء الاستطلاع لاستقبال الرسائل
-    logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
-    await dp.start_polling()
-
-# --- خادم ويب متزامن (aiohttp) ---
-async def handle_root(request):
-    """صفحة بسيطة لإبقاء الخدمة نشطة."""
-    return web.Response(text="Bot is alive and running!")
-
-async def start_web_server():
-    """يبدأ تشغيل خادم الويب بشكل متزامن."""
-    app = web.Application()
-    app.router.add_get("/", handle_root)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    try:
-        await site.start()
-        logger.info(f"🌐 خادم الويب يعمل على المنفذ {port}")
-        await asyncio.Event().wait()
-    finally:
-        await runner.cleanup()
-
-# --- الدالة الرئيسية التي تجمع كل شيء ---
-async def main():
-    """تشغل خادم الويب والبوت في نفس الوقت."""
-    await asyncio.gather(
-        start_web_server(),
-        start_bot()
+    executor.start_polling(
+        dispatcher=dp,
+        skip_updates=True,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown
     )
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("...إيقاف البوت")
