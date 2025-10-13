@@ -40,13 +40,15 @@ async def add_channel_start(call: types.CallbackQuery):
     await AddChannel.waiting_for_channel_id.set()
     await call.answer()
 
+# --- 💡 تم إصلاح هذه الدالة 💡 ---
 async def add_channel_id_received(message: types.Message, state: FSMContext):
     channel_id_str = message.text.strip()
-    bot = message.bot # <--- الإصلاح هنا
+    # الإصلاح: نحصل على كائن البوت من الرسالة نفسها
+    bot = message.bot
     
     try:
         chat = await bot.get_chat(channel_id_str)
-        bot_member = await bot.get_chat_member(chat.id, bot.id) # <--- الإصلاح هنا
+        bot_member = await bot.get_chat_member(chat.id, bot.id)
         
         if not (bot_member.is_chat_admin() and bot_member.can_post_messages):
             await message.answer(await db.get_text("cm_add_fail_not_admin"))
@@ -105,7 +107,7 @@ async def delete_channel(call: types.CallbackQuery, callback_data: dict):
 
 async def test_channel(call: types.CallbackQuery, callback_data: dict):
     db_id = callback_data['id']
-    bot = call.bot # <--- الإصلاح هنا
+    bot = call.bot
     channels = await db.get_all_publishing_channels()
     target_channel = next((ch for ch in channels if str(ch['_id']) == db_id), None)
 
