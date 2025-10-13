@@ -61,32 +61,34 @@ class DatabaseManager:
             "ar_next_button": "التالي ⬅️",
             "ar_prev_button": "➡️ السابق",
             "ar_delete_button": "🗑️ حذف",
+            
+            # --- الإضافة الجديدة: جميع نصوص واجهة التذكيرات ---
+            "rem_menu_title": "⏰ *إدارة التذكيرات*\n\nاختر الإجراء المطلوب.",
+            "rem_add_button": "➕ إضافة تذكير",
+            "rem_view_button": "📖 عرض التذكيرات",
+            "rem_import_button": "📥 استيراد تذكيرات",
+            "rem_ask_for_content": "📝 أرسل الآن *نص التذكير*.",
+            "rem_added_success": "✅ تم حفظ التذكير بنجاح!",
+            "rem_add_another_button": "➕ إضافة تذكير آخر",
+            "rem_ask_for_file": "📦 *استيراد التذكيرات*\n\nأرسل ملف `.txt`.\nيجب أن يحتوي كل سطر على تذكير واحد.",
+            "rem_import_success": "✅ اكتمل الاستيراد: `{success_count}` نجح، `{failed_count}` فشل.",
+            "rem_no_reminders": "لا توجد أي تذكيرات مضافة حالياً.",
+            "rem_deleted_success": "🗑️ تم حذف التذكير بنجاح.",
+            "rem_delete_button": "🗑️ حذف",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
             
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
 
-    # --- وظائف إدارة الردود التلقائية (النسخة المصححة) ---
+    # --- وظائف إدارة الردود التلقائية ---
     async def add_auto_reply(self, keyword: str, message: dict):
-        """يضيف رداً تلقائياً جديداً أو يحدثه، مع تجاهل حالة الأحرف."""
         if not self.is_connected(): return
         keyword_lower = keyword.lower()
-        
-        doc = {
-            "keyword": keyword,  # نحتفظ بالشكل الأصلي للعرض للمدير
-            "keyword_lower": keyword_lower,  # نستخدم هذا للبحث الفعال
-            "message": message
-        }
-        # نستخدم update_one + upsert=True لتجنب تكرار الكلمات المفتاحية
-        await self.auto_replies_collection.update_one(
-            {"keyword_lower": keyword_lower},
-            {"$set": doc},
-            upsert=True
-        )
+        doc = {"keyword": keyword, "keyword_lower": keyword_lower, "message": message}
+        await self.auto_replies_collection.update_one({"keyword_lower": keyword_lower}, {"$set": doc}, upsert=True)
 
     async def find_auto_reply_by_keyword(self, keyword: str):
-        """يبحث عن رد تلقائي باستخدام الكلمة المفتاحية (متجاهلاً حالة الأحرف)."""
         if not self.is_connected(): return None
         return await self.auto_replies_collection.find_one({"keyword_lower": keyword.lower()})
 
@@ -107,6 +109,30 @@ class DatabaseManager:
             return result.deleted_count > 0
         except Exception:
             return False
+            
+    # --- الإضافة الجديدة: وظائف إدارة التذكيرات ---
+    async def add_reminder(self, text: str):
+        """يضيف تذكيراً جديداً."""
+        if not self.is_connected(): return
+        await self.reminders_collection.insert_one({"text": text})
+
+    async def get_reminders(self, page: int = 1, limit: int = 10):
+        """يجلب قائمة التذكيرات مع تقسيم الصفحات."""
+        if not self.is_connected(): return []
+        return await self.reminders_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
+
+    async def get_reminders_count(self):
+        """يحسب العدد الإجمالي للتذكيرات."""
+        if not self.is_connected(): return 0
+        return await self.reminders_collection.count_documents({})
+
+    async def delete_reminder(self, reminder_id: str):
+        """يحذف تذكيراً باستخدام المعرف الخاص به."""
+        if not self.is_connected(): return False
+        try:
+            result = await self.reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
+            return result.deleted_count > 0
+        except Exception: return False
 
     # --- وظائف الرد الذكي ---
     async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int):
