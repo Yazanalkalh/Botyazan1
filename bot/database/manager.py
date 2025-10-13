@@ -46,25 +46,35 @@ class DatabaseManager:
         if not self.is_connected(): return
         defaults = {
             # ... (النصوص السابقة موجودة هنا)
-            "welcome_message": "أهلاً بك يا {user_mention}!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
+            "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
             "ar_menu_title": "⚙️ *إدارة الردود التلقائية*", "ar_add_button": "➕ إضافة رد", "ar_view_button": "📖 عرض الردود", "ar_import_button": "📥 استيراد", "ar_back_button": "⬅️ عودة", "ar_ask_for_keyword": "📝 أرسل *الكلمة المفتاحية*", "ar_ask_for_content": "📝 أرسل *محتوى الرد*", "ar_added_success": "✅ تم الحفظ!", "ar_add_another_button": "➕ إضافة المزيد", "ar_ask_for_file": "📦 أرسل ملف `.txt` بالتنسيق:\n`الكلمة === المحتوى`", "ar_import_success": "✅ اكتمل: `{success_count}` نجح، `{failed_count}` فشل.", "ar_no_replies": "لا توجد ردود.", "ar_deleted_success": "🗑️ تم الحذف.", "ar_page_info": "صفحة {current_page}/{total_pages}", "ar_next_button": "التالي ⬅️", "ar_prev_button": "➡️ السابق", "ar_delete_button": "🗑️ حذف",
             "rem_menu_title": "⏰ *إدارة التذكيرات*", "rem_add_button": "➕ إضافة", "rem_view_button": "📖 عرض", "rem_import_button": "📥 استيراد", "rem_ask_for_content": "📝 أرسل *نص التذكير*.", "rem_added_success": "✅ تم الحفظ!", "rem_add_another_button": "➕ إضافة المزيد", "rem_ask_for_file": "📦 أرسل ملف `.txt` (كل سطر تذكير).", "rem_import_success": "✅ اكتمل: `{success_count}` نجح، `{failed_count}` فشل.", "rem_no_reminders": "لا توجد تذكيرات.", "rem_deleted_success": "🗑️ تم الحذف.", "rem_delete_button": "🗑️ حذف",
             "cp_menu_title": "📰 *إدارة منشورات القناة*", "cp_set_auto_msg_button": "✍️ تعيين الرسالة", "cp_view_auto_msg_button": "👀 عرض الرسالة", "cp_publish_now_button": "🚀 نشر الآن", "cp_ask_for_auto_msg": "📝 أرسل الآن الرسالة التي سيتم نشرها.", "cp_auto_msg_set_success": "✅ تم حفظ الرسالة.", "cp_no_auto_msg": "لم يتم تعيين رسالة.", "cp_auto_msg_deleted_success": "🗑️ تم حذف الرسالة.", "cp_publish_started": "🚀 جاري النشر إلى `{count}` قناة...", "cp_publish_finished": "🏁 اكتمل النشر!\n\n✅ نجح: `{success}`\n❌ فشل: `{failed}`", "cp_error_no_auto_msg_to_publish": "⚠️ لا توجد رسالة للنشر!", "cp_error_no_channels_to_publish": "⚠️ لا توجد قنوات مضافة!",
             "cm_menu_title": "📡 *إدارة القنوات*", "cm_add_button": "➕ إضافة قناة", "cm_view_button": "📖 عرض القنوات", "cm_ask_for_channel_id": "📡 أرسل الآن معرّف القناة (مثال: `@channel_username` أو `-100123456789`).\n\n*تأكد من أن البوت مشرف في القناة.*", "cm_add_success": "✅ تم إضافة القناة `{title}`!", "cm_add_fail_not_admin": "❌ فشل الإضافة. البوت ليس مشرفاً.", "cm_add_fail_invalid_id": "❌ فشل الإضافة. المعرّف غير صحيح.", "cm_add_fail_already_exists": "⚠️ هذه القناة مضافة بالفعل.", "cm_no_channels": "لم يتم إضافة قنوات.", "cm_deleted_success": "🗑️ تم حذف القناة.", "cm_test_button": "🔬 تجربة", "cm_test_success": "✅ تم إرسال رسالة تجريبية إلى `{title}`.", "cm_test_fail": "❌ فشل إرسال رسالة تجريبية إلى `{title}`.",
             "bm_menu_title": "🚫 *إدارة الحظر*", "bm_ban_button": "🚫 حظر مستخدم", "bm_unban_button": "✅ إلغاء حظر", "bm_view_button": "📖 عرض المحظورين", "bm_ask_for_user_id": "🆔 أرسل ID المستخدم للحظر.", "bm_ask_for_unban_user_id": "🆔 أرسل ID المستخدم لإلغاء الحظر.", "bm_user_banned_success": "🚫 تم حظر `{user_id}`.", "bm_user_already_banned": "⚠️ `{user_id}` محظور بالفعل.", "bm_user_unbanned_success": "✅ تم إلغاء حظر `{user_id}`.", "bm_user_not_banned": "⚠️ `{user_id}` ليس محظوراً.", "bm_invalid_user_id": "❌ ID غير صالح.", "bm_no_banned_users": "لا يوجد محظورين.",
+            "bc_ask_for_message": "📣 *نشر للجميع*", "bc_confirmation": "⏳ سيتم الإرسال إلى `{count}` مستخدم. هل أنت متأكد؟", "bc_confirm_button": "✅ نعم، ابدأ", "bc_cancel_button": "❌ إلغاء", "bc_started": "🚀 بدأت عملية النشر...", "bc_progress": "⏳ جاري النشر...\nنجح: `{success}` | فشل: `{failed}` | متبقي: `{remaining}`", "bc_finished": "🏁 اكتمل النشر!\n\n✅ نجح: `{success}` | ❌ فشل: `{failed}`",
             
-            # --- الإضافة الجديدة: نصوص واجهة النشر للجميع ---
-            "bc_ask_for_message": "📣 *نشر للجميع*\n\nأرسل الآن الرسالة التي تريد إرسالها لجميع مستخدمي البوت.",
-            "bc_confirmation": "⏳ سيتم إرسال رسالتك إلى `{count}` مستخدم. هل أنت متأكد؟",
-            "bc_confirm_button": "✅ نعم، ابدأ النشر",
-            "bc_cancel_button": "❌ إلغاء",
-            "bc_started": "🚀 بدأت عملية النشر... سيتم إعلامك عند الانتهاء.",
-            "bc_progress": "⏳ جاري النشر...\n\n✅ نجح: `{success}`\n❌ فشل: `{failed}`\n👥 المتبقي: `{remaining}` من `{total}`",
-            "bc_finished": "🏁 اكتملت عملية النشر!\n\n✅ تم الإرسال بنجاح إلى: `{success}` مستخدم.\n❌ فشل الإرسال إلى: `{failed}` مستخدم.",
+            # --- الإضافة الجديدة: نصوص واجهة تخصيص الواجهة ---
+            "ui_menu_title": "🎨 *تخصيص الواجهة*\n\nاختر العنصر الذي تريد تعديله.",
+            "ui_edit_date_button": "📅 تعديل زر التاريخ",
+            "ui_edit_time_button": "⏰ تعديل زر الساعة",
+            "ui_edit_reminder_button": "📿 تعديل زر الأذكار",
+            "ui_edit_timezone_button": "🌍 تعديل المنطقة الزمنية",
+            "ui_ask_for_new_text": "📝 أرسل الآن النص الجديد لـ *{item_name}*.",
+            "ui_text_updated_success": "✅ تم تحديث نص *{item_name}* بنجاح.",
+            "ui_ask_for_tz_identifier": "🌐 *الخطوة 1 من 2:*\nأرسل معرّف المنطقة الزمنية الرسمي (مثال: `Asia/Riyadh` أو `Africa/Cairo`).\nيمكنك العثور على القائمة الكاملة في ويكيبيديا.",
+            "ui_ask_for_tz_display_name": "✍️ *الخطوة 2 من 2:*\nممتاز! الآن أرسل الاسم الذي سيظهر للمستخدمين (مثال: `بتوقيت صنعاء`).",
+            "ui_tz_updated_success": "✅ تم تحديث المنطقة الزمنية بنجاح.",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
-        await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"value": "Asia/Riyadh"}}, upsert=True)
+            
+        # إضافة إعدادات المنطقة الزمنية الافتراضية بشكل منفصل
+        await self.settings_collection.update_one(
+            {"_id": "timezone"},
+            {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}},
+            upsert=True
+        )
 
     # --- (الوظائف السابقة موجودة هنا دون تغيير) ---
     async def add_auto_reply(self, keyword: str, message: dict): #...
@@ -149,26 +159,46 @@ class DatabaseManager:
     async def get_banned_users_count(self): #...
         if not self.is_connected(): return 0
         return await self.banned_users_collection.count_documents({})
-
-    # --- الإضافة الجديدة: وظائف النشر للجميع ---
-    async def get_all_users(self):
-        """
-        يجلب قائمة بجميع معرفات المستخدمين النشطين (غير المحظورين).
-        هذه عملية مكلفة، لذا يجب استخدامها بحذر.
-        """
+    async def get_all_users(self): #...
         if not self.is_connected(): return []
-        
-        # جلب كل المستخدمين
         all_users_cursor = self.users_collection.find({}, {"user_id": 1, "_id": 0})
         all_user_ids = {user['user_id'] for user in await all_users_cursor.to_list(length=None)}
-        
-        # جلب كل المستخدمين المحظورين
         banned_users_cursor = self.banned_users_collection.find({}, {"_id": 1})
         banned_user_ids = {user['_id'] for user in await banned_users_cursor.to_list(length=None)}
-        
-        # إرجاع المستخدمين غير المحظورين فقط
         active_user_ids = all_user_ids - banned_user_ids
         return list(active_user_ids)
+
+    # --- الإضافة الجديدة: وظائف تخصيص الواجهة ---
+    async def update_text(self, text_id: str, new_text: str):
+        """يقوم بتحديث أي نص في مجموعة النصوص."""
+        if not self.is_connected(): return
+        await self.texts_collection.update_one(
+            {"_id": text_id},
+            {"$set": {"text": new_text}},
+            upsert=True # للتأكد من إضافة النص إذا لم يكن موجوداً
+        )
+
+    async def set_timezone(self, identifier: str, display_name: str):
+        """يحفظ كلاً من معرّف المنطقة الزمنية واسم العرض الخاص بها."""
+        if not self.is_connected(): return
+        await self.settings_collection.update_one(
+            {"_id": "timezone"},
+            {"$set": {"identifier": identifier, "display_name": display_name}},
+            upsert=True
+        )
+
+    async def get_timezone(self) -> dict:
+        """يجلب إعدادات المنطقة الزمنية (المعرّف واسم العرض)."""
+        if not self.is_connected():
+            return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
+        doc = await self.settings_collection.find_one({"_id": "timezone"})
+        if doc:
+            return {
+                "identifier": doc.get("identifier", "Asia/Riyadh"),
+                "display_name": doc.get("display_name", "بتوقيت الرياض")
+            }
+        return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
+
 
     # --- (بقية الوظائف موجودة هنا دون تغيير) ---
     async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int): #...
@@ -191,10 +221,7 @@ class DatabaseManager:
         pipeline = [{"$sample": {"size": 1}}]
         async for doc in self.reminders_collection.aggregate(pipeline): return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
-    async def get_timezone(self) -> str: #...
-        if not self.is_connected(): return "Asia/Riyadh"
-        doc = await self.settings_collection.find_one({"_id": "timezone"})
-        return doc.get("value", "Asia/Riyadh") if doc else "Asia/Riyadh"
+    # get_timezone تم تحديثها أعلاه
     async def get_subscription_channels(self) -> list[str]: #...
         if not self.is_connected(): return []
         channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
