@@ -47,7 +47,7 @@ class DatabaseManager:
     async def initialize_defaults(self):
         if not self.is_connected(): return
         defaults = {
-            # ... (النصوص السابقة موجودة هنا)
+            # ... (جميع النصوص السابقة موجودة هنا)
             "admin_panel_title": "أهلاً بك في لوحة التحكم.",
             "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
             "ar_menu_title": "⚙️ *إدارة الردود التلقائية*", "ar_add_button": "➕ إضافة رد", "ar_view_button": "📖 عرض الردود", "ar_import_button": "📥 استيراد", "ar_back_button": "⬅️ عودة", "ar_ask_for_keyword": "📝 أرسل *الكلمة المفتاحية*", "ar_ask_for_content": "📝 أرسل *محتوى الرد*", "ar_added_success": "✅ تم الحفظ!", "ar_add_another_button": "➕ إضافة المزيد", "ar_ask_for_file": "📦 أرسل ملف `.txt`.", "ar_import_success": "✅ اكتمل.", "ar_no_replies": "لا توجد ردود.", "ar_deleted_success": "🗑️ تم الحذف.", "ar_page_info": "صفحة {current_page}/{total_pages}", "ar_next_button": "التالي ⬅️", "ar_prev_button": "➡️ السابق", "ar_delete_button": "🗑️ حذف",
@@ -62,22 +62,12 @@ class DatabaseManager:
             "stats_title": "📊 *إحصائيات البوت*", "stats_total_users": "👤 المستخدمون", "stats_banned_users": "🚫 المحظورون", "stats_auto_replies": "📝 الردود", "stats_reminders": "⏰ التذكيرات", "stats_refresh_button": "🔄 تحديث",
             "lib_menu_title": "📚 *إدارة المكتبة*", "lib_add_button": "➕ إضافة", "lib_view_button": "📖 عرض", "lib_ask_for_item": "📥 أرسل أي رسالة.", "lib_item_saved": "✅ تم الحفظ.", "lib_no_items": "🗄️ فارغة.", "lib_deleted_success": "🗑️ تم الحذف.", "lib_item_info": "عنصر {current_item}/{total_items}",
             "fs_menu_title": "🔗 *الاشتراك الإجباري*", "fs_status_button": "🚦 الحالة", "fs_add_button": "➕ إضافة قناة", "fs_view_button": "📖 عرض القنوات", "fs_enabled": "🟢 مفعل", "fs_disabled": "🔴 معطل", "fs_ask_for_channel_id": "📡 أرسل معرّف القناة.", "fs_add_success": "✅ تم الإضافة!", "fs_add_fail_not_admin": "❌ فشل.", "fs_no_channels": "لا توجد قنوات.", "fs_deleted_success": "🗑️ تم الحذف.",
-            
-            # --- الإضافة الجديدة: نصوص واجهة مراقبة النظام ---
-            "sm_title": "🖥️ *مراقبة النظام*",
-            "sm_status_ok": "🟢 كل الأنظمة تعمل.",
-            "sm_status_degraded": "🟡 بعض الأنظمة تواجه مشاكل.",
-            "sm_health_checks": "المؤشرات الحيوية",
-            "sm_performance": "الأداء",
-            "sm_deploy_info": "معلومات النشر",
-            "sm_bot_status": "حالة البوت",
-            "sm_db_status": "قاعدة البيانات",
-            "sm_uptime": "مدة التشغيل",
-            "sm_tg_latency": "استجابة تيليجرام",
-            "sm_last_update": "آخر تحديث",
-            "sm_status_operational": "يعمل",
-            "sm_status_connected": "متصل",
-            "sm_status_unreachable": "غير متصل",
+            "sm_title": "🖥️ *مراقبة النظام*", "sm_status_ok": "🟢 كل الأنظمة تعمل.", "sm_status_degraded": "🟡 مشاكل.", "sm_health_checks": "المؤشرات الحيوية", "sm_performance": "الأداء", "sm_deploy_info": "معلومات النشر", "sm_bot_status": "حالة البوت", "sm_db_status": "قاعدة البيانات", "sm_uptime": "مدة التشغيل", "sm_tg_latency": "استجابة تيليجرام", "sm_last_update": "آخر تحديث", "sm_status_operational": "يعمل", "sm_status_connected": "متصل", "sm_status_unreachable": "غير متصل",
+
+            # --- الإضافة الجديدة: نصوص واجهة محرر النصوص ---
+            "te_menu_title": "✍️ *محرر النصوص*\n\nاختر النص الذي تريد تعديله من القائمة أدناه.",
+            "te_ask_for_new_text": "📝 أرسل الآن النص الجديد.",
+            "te_updated_success": "✅ تم تحديث النص بنجاح!",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
@@ -90,6 +80,15 @@ class DatabaseManager:
     # --- (الوظائف السابقة موجودة هنا دون تغيير) ---
     # ...
         
+    # --- الإضافة الجديدة: وظيفة جلب النصوص القابلة للتعديل ---
+    async def get_all_editable_texts(self):
+        """يجلب كل المفاتيح من مجموعة النصوص لعرضها للمدير."""
+        if not self.is_connected(): return []
+        cursor = self.texts_collection.find({}, {"_id": 1})
+        # الفرز حسب المفتاح الأبجدي لتكون القائمة منظمة
+        docs = await cursor.sort("_id", 1).to_list(length=None)
+        return [doc['_id'] for doc in docs]
+
     # --- الإضافة الجديدة: وظيفة فحص قاعدة البيانات ---
     async def ping_database(self) -> bool:
         """يرسل أمر 'ping' لقاعدة البيانات للتحقق من الاتصال الحي."""
