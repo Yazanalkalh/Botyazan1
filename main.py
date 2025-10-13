@@ -6,59 +6,68 @@ import logging
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
+# --- هذا هو التصحيح الجذري والنهائي ---
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 
 from config import TELEGRAM_TOKEN, MONGO_URI
 from bot.utils.loader import auto_register_handlers
+from bot.database.manager import db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def on_startup(dp: Dispatcher):
-    """يتم التنفيذ عند بدء تشغيل البوت."""
-    # استدعاء "المفتش الآلي" ليقوم بتسجيل كل شيء
-    auto_register_handlers(dp)
-    logger.info("البوت جاهز للعمل.")
+# --- دالة لتشغيل البوت ---
+async def start_bot():
+    """يقوم بإعداد وتشغيل البوت."""
+    bot = Bot(token=TELEGRAM_TOKEN)
+    
+    # --- استخدام التخزين الدائم بالطريقة الرسمية والصحيحة ---
+    storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
+    
+    dp = Dispatcher(bot, storage=storage)
 
-# --- إعداد خادم الويب aiohttp ---
+    # الاتصال بقاعدة البيانات الخاصة بنا
+    if not await db.connect_to_database(MONGO_URI):
+        logger.critical("❌ فشل الاتصال بقاعدة البيانات، لا يمكن تشغيل البوت.")
+        return
+
+    # استدعاء "المفتش الآلي" لتسجيل كل المعالجات
+    auto_register_handlers(dp)
+
+    # بدء الاستطلاع لاستقبال الرسائل
+    logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
+    await dp.start_polling()
+
+# --- خادم ويب متزامن (aiohttp) ---
 async def handle_root(request):
-    return web.Response(text="Bot is alive!")
+    """صفحة بسيطة لإبقاء الخدمة نشطة."""
+    return web.Response(text="Bot is alive and running!")
 
 async def start_web_server():
     """يبدأ تشغيل خادم الويب بشكل متزامن."""
     app = web.Application()
-    app.router.add_get('/', handle_root)
+    app.router.add_get("/", handle_root)
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 10000))
-    site = web.TCPSite(runner, '0.0.0.0', port)
+    site = web.TCPSite(runner, "0.0.0.0", port)
     try:
         await site.start()
         logger.info(f"🌐 خادم الويب يعمل على المنفذ {port}")
-        # حلقة لا نهائية لإبقاء الخادم يعمل في الخلفية
         await asyncio.Event().wait()
     finally:
         await runner.cleanup()
 
-async def start_bot():
-    """يبدأ تشغيل البوت."""
-    bot = Bot(token=TELEGRAM_TOKEN)
-    storage = MongoStorage(uri=MONGO_URI)
-    dp = Dispatcher(bot, storage=storage)
-
-    await on_startup(dp)
-    await dp.start_polling()
-
+# --- الدالة الرئيسية التي تجمع كل شيء ---
 async def main():
-    """الوظيفة الرئيسية التي تجمع كل شيء."""
-    # تشغيل خادم الويب والبوت في نفس الوقت
+    """تشغل خادم الويب والبوت في نفس الوقت."""
     await asyncio.gather(
         start_web_server(),
-        start_bot(),
+        start_bot()
     )
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("إيقاف البوت...")
+        logger.info("...إيقاف البوت")
