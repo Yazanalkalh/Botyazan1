@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import logging
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
 from bot.database.manager import db
+
+logger = logging.getLogger(__name__)
 
 # --- FSM States ---
 class EditText(StatesGroup):
@@ -14,39 +17,52 @@ class EditTimezone(StatesGroup):
     waiting_for_identifier = State()
     waiting_for_display_name = State()
 
-# --- 1. Main Menu for UI Customization ---
+# --- 1. Main Menu for UI Customization (النسخة المحصّنة) ---
 async def show_ui_menu(call: types.CallbackQuery, state: FSMContext):
-    """Displays the main menu for UI customization."""
-    await state.finish()
-    text = await db.get_text("ui_menu_title")
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        types.InlineKeyboardButton(text=await db.get_text("ui_edit_date_button"), callback_data="ui:edit_text:date_button"),
-        types.InlineKeyboardButton(text=await db.get_text("ui_edit_time_button"), callback_data="ui:edit_text:time_button"),
-        types.InlineKeyboardButton(text=await db.get_text("ui_edit_reminder_button"), callback_data="ui:edit_text:reminder_button"),
-        types.InlineKeyboardButton(text=await db.get_text("ui_edit_timezone_button"), callback_data="ui:edit_timezone"),
-        types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:panel:back")
-    )
-    await call.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await call.answer()
+    """Displays the main menu for UI customization with error handling."""
+    try:
+        await state.finish()
+        text = await db.get_text("ui_menu_title")
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        keyboard.add(
+            types.InlineKeyboardButton(text=await db.get_text("ui_edit_date_button"), callback_data="ui:edit_text:date_button"),
+            types.InlineKeyboardButton(text=await db.get_text("ui_edit_time_button"), callback_data="ui:edit_text:time_button"),
+            types.InlineKeyboardButton(text=await db.get_text("ui_edit_reminder_button"), callback_data="ui:edit_text:reminder_button"),
+            types.InlineKeyboardButton(text=await db.get_text("ui_edit_timezone_button"), callback_data="ui:edit_timezone"),
+            types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:panel:back")
+        )
+        await call.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await call.answer()
+    except Exception as e:
+        # --- هذا هو كاشف الأخطاء ---
+        # إذا حدث أي خطأ، سيتم طباعته في السجلات بدلاً من تجاهله
+        logger.error(f"Error in show_ui_menu: {e}")
+        await call.answer("حدث خطأ ما. يرجى مراجعة السجلات.", show_alert=True)
+
 
 # --- 2. Edit Text Flow (for buttons) ---
 async def edit_text_start(call: types.CallbackQuery, state: FSMContext):
     """Starts the process of editing a text item (like a button label)."""
-    text_id = call.data.split(":")[-1]
-    item_name_key = f"ui_edit_{text_id}_button" # e.g., ui_edit_date_button_button
-    item_name = await db.get_text(item_name_key)
-    
-    await state.update_data(text_id_to_edit=text_id, item_name=item_name)
-    
-    current_text = await db.get_text(text_id)
-    prompt_text = (await db.get_text("ui_ask_for_new_text")).format(item_name=item_name)
-    prompt_text += f"\n\nالنص الحالي: `{current_text}`"
+    try:
+        text_id = call.data.split(":")[-1]
+        # اسم المفتاح النصي لعنوان الزر نفسه، مثال: "ui_edit_date_button"
+        item_name_key = f"ui_edit_{text_id}_button"
+        item_name = await db.get_text(item_name_key)
+        
+        await state.update_data(text_id_to_edit=text_id, item_name=item_name)
+        
+        current_text = await db.get_text(text_id)
+        prompt_text = (await db.get_text("ui_ask_for_new_text")).format(item_name=item_name)
+        prompt_text += f"\n\nالنص الحالي: `{current_text}`"
 
-    keyboard = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:ui_customization"))
-    await call.message.edit_text(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
-    await EditText.waiting_for_new_text.set()
-    await call.answer()
+        keyboard = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:ui_customization"))
+        await call.message.edit_text(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
+        await EditText.waiting_for_new_text.set()
+        await call.answer()
+    except Exception as e:
+        logger.error(f"Error in edit_text_start: {e}")
+        await call.answer("حدث خطأ ما. يرجى مراجعة السجلات.", show_alert=True)
+
 
 async def new_text_received(message: types.Message, state: FSMContext):
     """Receives, saves the new text, and confirms."""
@@ -66,7 +82,7 @@ async def edit_timezone_start(call: types.CallbackQuery, state: FSMContext):
     """Starts the process of editing the timezone."""
     current_tz = await db.get_timezone()
     prompt_text = await db.get_text("ui_ask_for_tz_identifier")
-    prompt_text += f"\n\nالمعرّف الحالي: `{current_tz['identifier']}`"
+    prompt_text += f"\n\nالمعرّف الحالي: `{current_tz.get('identifier', 'N/A')}`"
 
     keyboard = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:ui_customization"))
     await call.message.edit_text(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
@@ -79,7 +95,7 @@ async def timezone_identifier_received(message: types.Message, state: FSMContext
     
     current_tz = await db.get_timezone()
     prompt_text = await db.get_text("ui_ask_for_tz_display_name")
-    prompt_text += f"\n\nالاسم الحالي: `{current_tz['display_name']}`"
+    prompt_text += f"\n\nالاسم الحالي: `{current_tz.get('display_name', 'N/A')}`"
     
     keyboard = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:ui_customization"))
     await message.answer(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
