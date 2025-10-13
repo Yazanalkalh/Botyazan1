@@ -1,6 +1,12 @@
+import sys
+import os
+# --- الإضافة الجديدة: إجبار بايثون على رؤية مجلدات المشروع ---
+# هذا السطر يضيف المجلد الرئيسي للمشروع إلى مسار البحث لحل مشكلة ModuleNotFoundError
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# ---------------------------------------------------------
+
 # -*- coding: utf-8 -*-
 
-import os
 import asyncio
 import logging
 from aiohttp import web
@@ -13,7 +19,6 @@ from config import TELEGRAM_TOKEN, MONGO_URI
 from bot.utils.loader import discover_handlers
 from bot.database.manager import db
 from bot.middlewares.admin_filter import IsAdminFilter
-# --- الإضافة الجديدة: استيراد وسيط الحظر ---
 from bot.middlewares.ban_middleware import BanMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +33,6 @@ async def start_bot():
 
     # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
-    # --- الإضافة الجديدة: تفعيل جدار الحماية الخاص بالحظر ---
     dp.middleware.setup(BanMiddleware())
 
     if not await db.connect_to_database(MONGO_URI):
