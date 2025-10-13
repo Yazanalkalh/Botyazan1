@@ -27,29 +27,38 @@ async def notify_admin_of_new_user(user: types.User, bot: Bot):
     except Exception as e:
         print(f"فشل إرسال إشعار المستخدم الجديد: {e}")
 
+# --- 💡 تم تحديث هذه الدالة بالكامل 💡 ---
 async def is_user_subscribed(user_id: int, bot: Bot) -> bool:
     """
-    وظيفة "حارس البوابة": تتحقق مما إذا كان المستخدم مشتركاً في جميع القنوات.
+    وظيفة "حارس البوابة" المحسّنة:
+    1. تتحقق أولاً مما إذا كانت الميزة مفعلة.
+    2. ثم تتحقق من اشتراك المستخدم في القنوات.
     """
+    # الخطوة 1: التحقق مما إذا كانت الميزة مفعلة من الأساس
+    is_enabled = await db.get_force_subscribe_status()
+    if not is_enabled:
+        return True # إذا كانت الميزة معطلة، نسمح للجميع بالمرور
+
+    # الخطوة 2: إذا كانت مفعلة، نكمل التحقق كالسابق
     required_channels = await db.get_subscription_channels()
     if not required_channels:
-        return True
+        return True # لا توجد قنوات = الجميع مسموح له بالمرور
 
     for channel_username in required_channels:
         try:
             member = await bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
             if member.status not in ["creator", "administrator", "member"]:
-                return False
+                return False # المستخدم ليس عضواً
         except (ChatNotFound, BadRequest):
             print(f"تحذير: لا يمكن التحقق من القناة @{channel_username}.")
+            # ملاحظة: إذا فشل التحقق من قناة، يجب أن نسمح للمستخدم بالمرور
+            # لتجنب حبس المستخدمين بسبب خطأ في الإعدادات.
             continue
     return True
 
-# --- 💡 تم تحديث هذه الدالة بالكامل 💡 ---
 async def show_main_menu(message: types.Message, user: types.User, edit_mode: bool = False):
     """
     وظيفة مركزية ومحسّنة لعرض القائمة الرئيسية.
-    تدعم الآن الهاشتاقات المخصصة في رسالة الترحيب.
     """
     keyboard = types.InlineKeyboardMarkup(row_width=3)
     date_button_text = await db.get_text("date_button")
@@ -61,27 +70,23 @@ async def show_main_menu(message: types.Message, user: types.User, edit_mode: bo
         types.InlineKeyboardButton(text=reminder_button_text, callback_data="show_reminder")
     )
 
-    # 1. جلب قالب الرسالة الخام من قاعدة البيانات
     template = await db.get_text("welcome_message")
 
-    # 2. تجهيز القيم التي سيتم استبدالها
-    name_user_mention = user.get_mention(as_html=True)  # <a href="tg://user?id=123">الاسم الكامل</a>
+    name_user_mention = user.get_mention(as_html=True)
     username_mention = f"@{user.username}" if user.username else "لا يوجد"
     first_name = user.first_name
     user_id_str = str(user.id)
 
-    # 3. تنفيذ عملية الاستبدال الذكية
     processed_text = template.replace("#name_user", name_user_mention)
     processed_text = processed_text.replace("#username", username_mention)
     processed_text = processed_text.replace("#name", first_name)
     processed_text = processed_text.replace("#id", user_id_str)
     
-    # 4. إرسال الرس النهائية مع استخدام وضع HTML لدعم الروابط والتنسيقات
     if edit_mode:
         try:
             await message.edit_text(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
         except Exception:
-            pass # نتجاهل الأخطاء مثل "الرسالة لم تتغير"
+            pass
     else:
         await message.answer(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
@@ -104,7 +109,6 @@ async def start_command(message: types.Message):
         await notify_admin_of_new_user(user, message.bot)
     
     if await is_user_subscribed(user.id, message.bot):
-        # 💡 التعديل: نمرر كائن المستخدم للدالة
         await show_main_menu(message, user=user)
     else:
         await show_subscription_message(message)
@@ -114,7 +118,6 @@ async def check_subscription_callback(call: types.CallbackQuery):
     await call.answer(text="جاري التحقق من اشتراكك...", show_alert=False)
     user = call.from_user
     if await is_user_subscribed(user.id, call.bot):
-        # 💡 التعديل: نمرر كائن المستخدم للدالة
         await show_main_menu(call.message, user=user, edit_mode=True)
     else:
         await call.answer(text="عذراً، لم تشترك في جميع القنوات بعد. يرجى المحاولة مرة أخرى.", show_alert=True)
