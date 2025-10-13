@@ -16,7 +16,6 @@ async def send_reply_from_data(chat_id: int, reply_data: dict):
     """
     try:
         message_content = reply_data.get('message', {})
-        # نستخدم الطريقة الاحترافية لإعادة بناء الرسالة وإرسال نسخة منها
         message_to_send = types.Message.to_object(message_content)
         await message_to_send.send_copy(chat_id)
     except Exception as e:
@@ -50,35 +49,28 @@ async def handle_user_message(message: types.Message):
     1. يتحقق من وجود رد تلقائي أولاً.
     2. إذا لم يجد، يقوم بإعادة توجيه الرسالة للمدير.
     """
-    # نتجاهل رسائل المدير ورسائل المستخدمين غير المشتركين
     if message.from_user.id == ADMIN_USER_ID:
         return
     if not await is_user_subscribed(message.from_user.id, message.bot):
         return
 
-    # --- الإضافة الجديدة: التحقق من الرد التلقائي أولاً ---
+    # ====> هذا هو المنطق الصحيح <====
+    # 1. التحقق من الرد التلقائي أولاً (فقط للرسائل النصية)
     if message.content_type == types.ContentType.TEXT:
         reply_data = await db.find_auto_reply_by_keyword(message.text)
         if reply_data:
             await send_reply_from_data(message.chat.id, reply_data)
-            return # نتوقف هنا لأننا وجدنا رداً تلقائياً
+            return # نتوقف هنا لأننا وجدنا رداً
 
-    # --- المنطق القديم: إذا لم يتم العثور على رد، نقوم بإعادة التوجيه ---
+    # 2. إذا لم يتم العثور على رد، نقوم بإعادة التوجيه للمدير
     try:
-        # 1. إرسال بطاقة تعريف المستخدم
         await send_user_card_to_admin(message.from_user, message.bot)
-
-        # 2. نسخ رسالة المستخدم إلى المدير
         copied_message = await message.copy_to(ADMIN_USER_ID)
-        
-        # 3. تسجيل الربط في قاعدة البيانات لنظام الرد
         await db.log_message_link(
             admin_message_id=copied_message.message_id,
             user_id=message.from_user.id,
             user_message_id=message.message_id
         )
-        
-        # 4. إرسال رسالة تأكيد للمستخدم
         await message.reply("✅ تم استلام رسالتك بنجاح، سيتم الرد عليك قريباً.")
 
     except Exception as e:
@@ -88,5 +80,4 @@ async def handle_user_message(message: types.Message):
 
 def register_messages_handler(dp: Dispatcher):
     """وظيفة التسجيل التلقائي لهذه الوحدة."""
-    # نسجل المعالج للعمل على كل أنواع الرسائل
     dp.register_message_handler(handle_user_message, content_types=types.ContentTypes.ANY)
