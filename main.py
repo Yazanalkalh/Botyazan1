@@ -8,10 +8,11 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 
-# --- لم نعد بحاجة لتعريف وقت البدء هنا ---
+# --- نستورد المتغيرات والمحركات الجديدة ---
+from bot.core.bot_data import START_TIME
+from bot.core.scheduler import scheduler, load_pending_jobs
 
 from config import TELEGRAM_TOKEN, MONGO_URI
-# --- استيراد المكونات الأساسية ---
 from bot.utils.loader import discover_handlers
 from bot.database.manager import db
 from bot.middlewares.admin_filter import IsAdminFilter
@@ -27,7 +28,6 @@ async def start_bot():
     storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
     dp = Dispatcher(bot, storage=storage)
 
-    # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
     dp.middleware.setup(BanMiddleware())
 
@@ -35,35 +35,35 @@ async def start_bot():
         logger.critical("❌ فشل الاتصال بقاعدة البيانات، إيقاف البوت.")
         return
 
-    # --- هذا هو الحل النهائي لمشكلة الترتيب ---
+    # --- 💡 الإضافة الجديدة: إعادة تحميل المهام المجدولة 💡 ---
+    await load_pending_jobs(bot)
+
     all_handler_modules = discover_handlers()
-    logger.info("🚦 بدء تسجيل المعالجات بالترتيب الصحيح...")
+    logger.info("🚦 بدء تسجيل المعالجات...")
     
     for module in all_handler_modules:
         if module.__name__.endswith("messages"): continue 
         for attr_name in dir(module):
             if attr_name.startswith("register_"):
                 getattr(module, attr_name)(dp)
-                logger.info(f"✅ [أولوية عالية] تم تسجيل: {attr_name} من {module.__name__}")
+                logger.info(f"✅ [أولوية عالية] تم تسجيل: {attr_name}")
 
     for module in all_handler_modules:
         if module.__name__.endswith("messages"):
             for attr_name in dir(module):
                 if attr_name.startswith("register_"):
                     getattr(module, attr_name)(dp)
-                    logger.info(f"✅ [أولوية منخفضة] تم تسجيل: {attr_name} من {module.__name__}")
+                    logger.info(f"✅ [أولوية منخفضة] تم تسجيل: {attr_name}")
             break
 
     logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
     await dp.start_polling()
 
-# --- خادم ويب متزامن (aiohttp) ---
+# --- (بقية الملف كما هو) ---
 async def handle_root(request):
-    """صفحة بسيطة لإبقاء الخدمة نشطة."""
     return web.Response(text="Bot is alive and running!")
 
 async def start_web_server():
-    """يبدأ تشغيل خادم الويب بشكل متزامن."""
     app = web.Application()
     app.router.add_get("/", handle_root)
     runner = web.AppRunner(app)
@@ -77,9 +77,10 @@ async def start_web_server():
     finally:
         await runner.cleanup()
 
-# --- الدالة الرئيسية التي تجمع كل شيء ---
 async def main():
-    """تشغل خادم الويب والبوت في نفس الوقت."""
+    # --- 💡 الإضافة الجديدة: بدء تشغيل محرك الجدولة 💡 ---
+    scheduler.start()
+    
     await asyncio.gather(
         start_web_server(),
         start_bot()
@@ -90,3 +91,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("...إيقاف البوت")
+        scheduler.shutdown() # إيقاف آمن للمجدول
