@@ -120,10 +120,7 @@ async def schedule_channels_received(call: types.CallbackQuery, state: FSMContex
     await call.message.edit_text(await db.get_text("sch_ask_for_datetime"), parse_mode="Markdown")
     await SchedulePost.next()
 
-# --- 💡 تم إصلاح هذه الدالة 💡 ---
 async def schedule_datetime_received(message: types.Message, state: FSMContext):
-    """يستلم الوقت، يتحقق منه، ويقوم بالجدولة النهائية."""
-    # الإصلاح: نحصل على كائن البوت من الرسالة نفسها
     bot = message.bot
     try:
         run_date = datetime.datetime.strptime(message.text, "%Y-%m-%d %H:%M")
@@ -178,10 +175,18 @@ async def view_scheduled_posts(call: types.CallbackQuery, callback_data: dict = 
     keyboard.add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:channel_publications"))
     await call.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
+# --- 💡 تم إصلاح هذه الدالة 💡 ---
 async def delete_scheduled_post(call: types.CallbackQuery, callback_data: dict):
+    """
+    يحذف منشوراً مجدولاً بأمان.
+    """
     job_id = callback_data['id']
     await db.delete_scheduled_post(job_id)
-    scheduler.remove_job(job_id, missing_ok=True)
+    
+    # الإصلاح: التحقق من وجود المهمة قبل محاولة حذفها
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+        
     await call.answer(await db.get_text("sch_deleted_success"), show_alert=False)
     await view_scheduled_posts(call)
 
