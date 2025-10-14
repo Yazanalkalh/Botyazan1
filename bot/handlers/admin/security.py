@@ -10,7 +10,7 @@ from bot.database.manager import db
 class EditRejectionMessage(StatesGroup):
     waiting_for_message = State()
 
-# --- 1. Main Menu for Security ---
+# --- 1. Main Menu for Security (النسخة المصححة) ---
 async def show_security_menu(call: types.CallbackQuery, state: FSMContext):
     """Displays the main security menu."""
     await state.finish()
@@ -28,7 +28,10 @@ async def show_security_menu(call: types.CallbackQuery, state: FSMContext):
             callback_data="sec:toggle_status"
         ),
         types.InlineKeyboardButton(text=await db.get_text("sec_media_filtering_button"), callback_data="sec:media_menu"),
-        # types.InlineKeyboardButton(text=await db.get_text("sec_antiflood_button"), callback_data="sec:antiflood_menu"),
+        
+        # --- 💡 الإضافة الجديدة: الزر المفقود 💡 ---
+        types.InlineKeyboardButton(text=await db.get_text("sec_antiflood_button"), callback_data="sec:antiflood_menu"),
+        
         types.InlineKeyboardButton(text=await db.get_text("sec_rejection_message_button"), callback_data="sec:edit_rejection_msg"),
         types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:panel:back")
     )
