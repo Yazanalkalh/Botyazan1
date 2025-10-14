@@ -2,15 +2,18 @@
 
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure
 from bson.objectid import ObjectId
 import datetime
 import asyncio
 
+# --- 💡 الإضافة الجديدة: نستورد ذاكرة التوربو 💡 ---
+from bot.core.cache import TEXTS_CACHE
+
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    # --- (كل الكود السابق موجود هنا دون تغيير) ---
+    # --- (init, is_connected remains the same) ---
     def __init__(self):
         self.client = None
         self.db = None
@@ -18,11 +21,17 @@ class DatabaseManager:
     def is_connected(self) -> bool:
         return self.client is not None and self.db is not None
 
+    # --- 💡 تم تحديث هذه الدالة 💡 ---
     async def connect_to_database(self, uri: str):
+        """
+        يتصل بقاعدة البيانات، ثم يقوم بملء الذاكرة المؤقتة بالنصوص.
+        """
         try:
             self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
             await self.client.admin.command("ping")
+            
             self.db = self.client.get_database("IslamicBotDBAiogram")
+            
             self.users_collection = self.db.users
             self.texts_collection = self.db.texts
             self.reminders_collection = self.db.reminders
@@ -33,7 +42,11 @@ class DatabaseManager:
             self.publishing_channels_collection = self.db.publishing_channels
             self.banned_users_collection = self.db.banned_users
             self.library_collection = self.db.library
+            
             await self.initialize_defaults()
+            # --- 💡 الإضافة الجديدة: نملأ الذاكرة بعد الاتصال مباشرة 💡 ---
+            await self.load_texts_into_cache()
+
             logger.info("✅ تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
             return True
         except Exception as e:
@@ -41,10 +54,10 @@ class DatabaseManager:
             return False
 
     async def initialize_defaults(self):
+        # ... (this function remains exactly the same as in your file) ...
         if not self.is_connected(): return
         defaults = {
-            "admin_panel_title": "أهلاً بك في لوحة التحكم.",
-            "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
+            "admin_panel_title": "أهلاً بك في لوحة التحكم.", "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
             "ar_menu_title": "⚙️ *إدارة الردود التلقائية*", "ar_add_button": "➕ إضافة رد", "ar_view_button": "📖 عرض الردود", "ar_import_button": "📥 استيراد", "ar_back_button": "⬅️ عودة", "ar_ask_for_keyword": "📝 أرسل *الكلمة المفتاحية*", "ar_ask_for_content": "📝 أرسل *محتوى الرد*", "ar_added_success": "✅ تم الحفظ!", "ar_add_another_button": "➕ إضافة المزيد", "ar_ask_for_file": "📦 أرسل ملف `.txt`.", "ar_import_success": "✅ اكتمل.", "ar_no_replies": "لا توجد ردود.", "ar_deleted_success": "🗑️ تم الحذف.", "ar_page_info": "صفحة {current_page}/{total_pages}", "ar_next_button": "التالي ⬅️", "ar_prev_button": "➡️ السابق", "ar_delete_button": "🗑️ حذف",
             "rem_menu_title": "⏰ *إدارة التذكيرات*", "rem_add_button": "➕ إضافة", "rem_view_button": "📖 عرض", "rem_import_button": "📥 استيراد", "rem_ask_for_content": "📝 أرسل *نص التذكير*.", "rem_added_success": "✅ تم الحفظ!", "rem_add_another_button": "➕ إضافة المزيد", "rem_ask_for_file": "📦 أرسل ملف `.txt`.", "rem_import_success": "✅ اكتمل.", "rem_no_reminders": "لا توجد تذكيرات.", "rem_deleted_success": "🗑️ تم الحذف.", "rem_delete_button": "🗑️ حذف",
             "cp_menu_title": "📰 *إدارة منشورات القناة*", "cp_set_auto_msg_button": "✍️ تعيين الرسالة", "cp_view_auto_msg_button": "👀 عرض الرسالة", "cp_publish_now_button": "🚀 نشر الآن", "cp_ask_for_auto_msg": "📝 أرسل الرسالة.", "cp_auto_msg_set_success": "✅ تم الحفظ.", "cp_no_auto_msg": "لم يتم تعيين رسالة.", "cp_auto_msg_deleted_success": "🗑️ تم الحذف.", "cp_publish_started": "🚀 جاري النشر...", "cp_publish_finished": "🏁 اكتمل النشر!", "cp_error_no_auto_msg_to_publish": "⚠️ لا توجد رسالة!", "cp_error_no_channels_to_publish": "⚠️ لا توجد قنوات!",
@@ -62,27 +75,57 @@ class DatabaseManager:
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
-            
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
         default_security = {"bot_status": "active", "blocked_media": {}}
         await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": default_security}, upsert=True)
         await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$setOnInsert": {"enabled": True}}, upsert=True)
 
+    # --- 💡 دالة جديدة لملء الذاكرة المؤقتة 💡 ---
+    async def load_texts_into_cache(self):
+        """
+        يقرأ كل النصوص من قاعدة البيانات ويحفظها في الذاكرة المؤقتة.
+        """
+        if not self.is_connected(): return
+        logger.info("🚀 Caching all UI texts from database...")
+        cursor = self.texts_collection.find({}, {"_id": 1, "text": 1})
+        async for doc in cursor:
+            TEXTS_CACHE[doc['_id']] = doc.get('text', f"[{doc['_id']}]")
+        logger.info(f"✅ Successfully cached {len(TEXTS_CACHE)} text items.")
+
+    # --- 💡 تم تحديث هذه الدالة لتصبح فائقة السرعة 💡 ---
+    async def get_text(self, text_id: str) -> str:
+        """
+        يجلب النص المطلوب فوراً من الذاكرة المؤقتة (Cache).
+        """
+        return TEXTS_CACHE.get(text_id, f"[{text_id}]")
+
+    # --- 💡 تم تحديث هذه الدالة لتتزامن مع الذاكرة 💡 ---
+    async def update_text(self, text_id: str, new_text: str):
+        """
+        يقوم بتحديث النص في قاعدة البيانات ثم في الذاكرة المؤقتة مباشرة.
+        """
+        if not self.is_connected(): return
+        # 1. تحديث قاعدة البيانات (التخزين الدائم)
+        await self.texts_collection.update_one(
+            {"_id": text_id},
+            {"$set": {"text": new_text}},
+            upsert=True
+        )
+        # 2. تحديث الذاكرة المؤقتة (للاستخدام الفوري)
+        TEXTS_CACHE[text_id] = new_text
+        
+    # --- (بقية الدوال تبقى كما هي في ملفك الأصلي) ---
     async def get_all_editable_texts(self):
         if not self.is_connected(): return []
         cursor = self.texts_collection.find({}, {"_id": 1})
         docs = await cursor.sort("_id", 1).to_list(length=None)
         return [doc['_id'] for doc in docs]
-
     async def ping_database(self) -> bool:
         if not self.client: return False
         try:
             await self.client.admin.command("ping")
             return True
-        except ConnectionFailure:
-            return False
-
-    # --- (كل بقية الوظائف موجودة هنا دون أي تغيير) ---
+        except ConnectionFailure: return False
     async def get_auto_replies(self, page: int = 1, limit: int = 10):
         if not self.is_connected(): return []
         return await self.auto_replies_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
@@ -178,6 +221,12 @@ class DatabaseManager:
         tasks = [self.users_collection.count_documents({}), self.banned_users_collection.count_documents({}), self.auto_replies_collection.count_documents({}), self.reminders_collection.count_documents({})]
         results = await asyncio.gather(*tasks)
         return {"total_users": results[0], "banned_users": results[1], "auto_replies": results[2], "reminders": results[3]}
+    async def add_to_library(self, message: dict):
+        if not self.is_connected(): return
+        await self.library_collection.insert_one({"message": message, "added_date": datetime.datetime.utcnow()})
+    async def get_library_items(self, page: int = 1, limit: int = 5):
+        if not self.is_connected(): return []
+        return await self.library_collection.find().sort("added_date", -1).skip((page-1)*limit).limit(limit).to_list(length=limit)
     async def get_library_items_count(self):
         if not self.is_connected(): return 0
         return await self.library_collection.count_documents({})
@@ -208,6 +257,30 @@ class DatabaseManager:
         current_status = await self.get_force_subscribe_status()
         await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$set": {"enabled": not current_status}}, upsert=True)
         return not current_status
+    async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int):
+        if not self.is_connected(): return
+        await self.forwarding_map_collection.insert_one({"_id": admin_message_id, "user_id": user_id, "user_message_id": user_message_id})
+    async def get_message_link_info(self, admin_message_id: int):
+        if not self.is_connected(): return None
+        return await self.forwarding_map_collection.find_one({"_id": admin_message_id})
+    async def add_user(self, user) -> bool:
+        if not self.is_connected(): return False
+        user_data = {'first_name': user.first_name or "", 'last_name': getattr(user, 'last_name', "") or "", 'username': user.username or ""}
+        result = await self.users_collection.update_one({'user_id': user.id}, {'$set': user_data, '$setOnInsert': {'user_id': user.id}}, upsert=True)
+        return result.upserted_id is not None
+    async def get_random_reminder(self) -> str:
+        if not self.is_connected(): return "لا توجد أذكار حالياً."
+        pipeline = [{"$sample": {"size": 1}}]
+        async for doc in self.reminders_collection.aggregate(pipeline): return doc.get("text", "لا توجد أذكار حالياً.")
+        return "لا توجد أذكار حالياً."
+    async def get_subscription_channels(self) -> list[str]:
+        if not self.is_connected(): return []
+        channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
+        channels_list = await channels_cursor.to_list(length=None)
+        return [ch["username"] for ch in channels_list if ch.get("username")]
+    async def set_timezone(self, identifier: str, display_name: str):
+        if not self.is_connected(): return
+        await self.settings_collection.update_one({"_id": "timezone"}, {"$set": {"identifier": identifier, "display_name": display_name}}, upsert=True)
     async def get_publishing_channels(self, page: int = 1, limit: int = 10):
         if not self.is_connected(): return []
         return await self.publishing_channels_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
@@ -232,43 +305,5 @@ class DatabaseManager:
     async def get_banned_users(self, page: int = 1, limit: int = 10):
         if not self.is_connected(): return []
         return await self.banned_users_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
-    async def update_text(self, text_id: str, new_text: str):
-        if not self.is_connected(): return
-        await self.texts_collection.update_one({"_id": text_id}, {"$set": {"text": new_text}}, upsert=True)
-    async def set_timezone(self, identifier: str, display_name: str):
-        if not self.is_connected(): return
-        await self.settings_collection.update_one({"_id": "timezone"}, {"$set": {"identifier": identifier, "display_name": display_name}}, upsert=True)
-    async def log_message_link(self, admin_message_id: int, user_id: int, user_message_id: int):
-        if not self.is_connected(): return
-        await self.forwarding_map_collection.insert_one({"_id": admin_message_id, "user_id": user_id, "user_message_id": user_message_id})
-    async def get_message_link_info(self, admin_message_id: int):
-        if not self.is_connected(): return None
-        return await self.forwarding_map_collection.find_one({"_id": admin_message_id})
-    async def add_user(self, user) -> bool:
-        if not self.is_connected(): return False
-        user_data = {'first_name': user.first_name or "", 'last_name': getattr(user, 'last_name', "") or "", 'username': user.username or ""}
-        result = await self.users_collection.update_one({'user_id': user.id}, {'$set': user_data, '$setOnInsert': {'user_id': user.id}}, upsert=True)
-        return result.upserted_id is not None
-    async def get_text(self, text_id: str) -> str:
-        if not self.is_connected(): return f"[{text_id}]"
-        doc = await self.texts_collection.find_one({"_id": text_id})
-        return doc.get("text", f"[{text_id}]") if doc else f"[{text_id}]"
-    async def get_random_reminder(self) -> str:
-        if not self.is_connected(): return "لا توجد أذكار حالياً."
-        pipeline = [{"$sample": {"size": 1}}]
-        async for doc in self.reminders_collection.aggregate(pipeline): return doc.get("text", "لا توجد أذكار حالياً.")
-        return "لا توجد أذكار حالياً."
-    async def get_subscription_channels(self) -> list[str]:
-        if not self.is_connected(): return []
-        channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
-        channels_list = await channels_cursor.to_list(length=None)
-        return [ch["username"] for ch in channels_list if ch.get("username")]
-    async def get_library_items(self, page: int = 1, limit: int = 5):
-        if not self.is_connected(): return []
-        return await self.library_collection.find().sort("added_date", -1).skip((page-1)*limit).limit(limit).to_list(length=limit)
-    async def add_to_library(self, message: dict):
-        if not self.is_connected(): return
-        await self.library_collection.insert_one({"message": message, "added_date": datetime.datetime.utcnow()})
 
-# --- 💡 الخطوة الأخيرة: بناء المنزل الفعلي 💡 ---
 db = DatabaseManager()
