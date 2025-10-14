@@ -4,7 +4,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 
-from bot.database.manager import db
+# --- 💡 تم حذف "from bot.database.manager import db" من هنا لكسر الحلقة 💡 ---
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +13,13 @@ async def send_scheduled_post(bot: Bot, job_id: str, message_data: dict, target_
     """
     الدالة التي يتم استدعاؤها بواسطة المؤقت لإرسال المنشور.
     """
+    # --- 💡 نستدعي صندوق الأدوات فقط عند الحاجة الفعلية إليه 💡 ---
+    from bot.database.manager import db
+
     logger.info(f"⏰ Executing scheduled job: {job_id}")
     success_count = 0
     failed_count = 0
     
-    # إذا كانت القائمة فارغة، فهذا يعني 'كل القنوات'
     channels_to_publish = target_channels
     if not channels_to_publish:
         channels_docs = await db.get_all_publishing_channels()
@@ -36,27 +38,36 @@ async def send_scheduled_post(bot: Bot, job_id: str, message_data: dict, target_
             logger.error(f"Failed to send scheduled post to channel {channel_id}: {e}")
     
     logger.info(f"✅ Job {job_id} finished. Success: {success_count}, Failed: {failed_count}")
-    # نضع علامة 'منفذ' على المهمة في قاعدة البيانات
     await db.mark_scheduled_post_as_done(job_id)
 
 # --- محرك الجدولة الرئيسي ---
-scheduler = AsyncIOScheduler(timezone="Asia/Riyadh") # يمكنك تغيير المنطقة الزمنية لاحقاً
+scheduler = AsyncIOScheduler(timezone="Asia/Riyadh")
 
 async def load_pending_jobs(bot: Bot):
     """
     يقرأ كل المهام المعلقة من قاعدة البيانات عند بدء التشغيل ويعيد جدولتها.
     """
-    logger.info(" reloading pending scheduled jobs from database...")
+    # --- 💡 نستدعي صندوق الأدوات فقط عند الحاجة الفعلية إليه 💡 ---
+    from bot.database.manager import db
+    
+    logger.info(" re-loading pending scheduled jobs from database...")
     pending_jobs = await db.get_all_pending_scheduled_posts()
     count = 0
     for job_data in pending_jobs:
-        scheduler.add_job(
-            send_scheduled_post,
-            "date",
-            run_date=job_data['run_date'],
-            id=job_data['_id'],
-            args=[bot, job_data['_id'], job_data['message_data'], job_data['target_channels']],
-            replace_existing=True
-        )
-        count += 1
+        # التأكد من أن الوقت المجدول لم يمض بعد
+        if job_data['run_date'] > datetime.datetime.now():
+            scheduler.add_job(
+                send_scheduled_post,
+                "date",
+                run_date=job_data['run_date'],
+                id=job_data['_id'],
+                args=[bot, job_data['_id'], job_data['message_data'], job_data['target_channels']],
+                replace_existing=True
+            )
+            count += 1
+        else:
+            # إذا كان الوقت قد مضى، نضع علامة "منفذ" على المهمة لتجنب إرسالها
+            await db.mark_scheduled_post_as_done(job_data['_id'])
+            logger.warning(f"Skipped expired job: {job_data['_id']}")
+
     logger.info(f"✅ Reloaded {count} pending jobs.")
