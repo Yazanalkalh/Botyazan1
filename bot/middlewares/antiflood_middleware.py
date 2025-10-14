@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import asyncio
-from collections import defaultdict
+import logging
 from datetime import datetime, timedelta
 from aiogram import types, Dispatcher
 from aiogram.dispatcher.middlewares import BaseMiddleware
@@ -11,47 +10,53 @@ from aiogram.utils.exceptions import TelegramAPIError
 from bot.database.manager import db
 from config import ADMIN_USER_ID
 
-# ذاكرة مؤقتة لتتبع رسائل المستخدمين بسرعة
-user_messages = defaultdict(list)
+logger = logging.getLogger(__name__)
 
 class AntiFloodMiddleware(BaseMiddleware):
     """
-    بروتوكول سيربيروس: الحارس ثلاثي الرؤوس.
+    بروتوكول سيربيروس 2.1: الإصدار النهائي مع "فترة التهدئة" لمنع الحظر الخاطئ.
     """
     async def on_pre_process_message(self, message: types.Message, data: dict):
         user = message.from_user
-        if user.id == ADMIN_USER_ID:
+        if not user or user.id == ADMIN_USER_ID:
             return
 
         settings = await db.get_antiflood_settings()
         if not settings.get("enabled", True):
             return
 
-        now = datetime.now()
+        dp = Dispatcher.get_current()
+        storage = dp.storage
         user_id = user.id
         
-        # إضافة الطابع الزمني للرسالة الحالية
-        user_messages[user_id].append(now)
+        user_data = await storage.get_data(chat=user_id, user=user_id)
+        timestamps = user_data.get("antiflood_timestamps", [])
+        last_punishment_time = user_data.get("last_punishment_time")
 
-        # تنظيف الطوابع الزمنية القديمة
+        now = datetime.now()
+        
+        # --- 💡 الإصلاح: إضافة "فترة التهدئة" 💡 ---
+        # إذا تمت معاقبة المستخدم في آخر 10 ثوانٍ، نتجاهل رسائله فقط
+        if last_punishment_time and (now - last_punishment_time < timedelta(seconds=10)):
+            raise CancelHandler()
+
+        timestamps.append(now)
+
         rate_limit = settings.get("rate_limit", 7)
         time_window = settings.get("time_window", 2)
         
-        user_messages[user_id] = [
-            msg_time for msg_time in user_messages[user_id]
-            if now - msg_time < timedelta(seconds=time_window)
+        recent_timestamps = [
+            ts for ts in timestamps
+            if now - ts < timedelta(seconds=time_window)
         ]
 
-        # --- الرأس الأول والثاني: المراقب والمنفذ ---
-        if len(user_messages[user_id]) >= rate_limit:
-            # منع الرسالة الحالية
-            del user_messages[user_id][-1]
+        if len(recent_timestamps) >= rate_limit:
+            # تم تجاوز الحد، نبدأ الإجراءات ونسجل وقت العقوبة لمنع التكرار
+            await storage.set_data(chat=user_id, user=user_id, data={"antiflood_timestamps": [], "last_punishment_time": now})
             
-            # تسجيل مخالفة
             await db.record_antiflood_violation(user_id)
             violation_count = await db.get_user_violation_count(user_id)
             
-            # --- الرأس الثالث: القاضي ---
             if violation_count >= 2: # المخالفة الثانية = حظر
                 await db.ban_user(user_id)
                 ban_notification = await db.get_text("af_ban_notification")
@@ -84,6 +89,9 @@ class AntiFloodMiddleware(BaseMiddleware):
                 await message.bot.send_message(ADMIN_USER_ID, admin_notification_text, parse_mode="HTML")
 
             raise CancelHandler()
+        else:
+            # إذا لم يتم تجاوز الحد، نقوم بتحديث الذاكرة المركزية بالسجل النظيف
+            await storage.update_data(chat=user_id, user=user_id, data={"antiflood_timestamps": recent_timestamps})
 
 # دالة مساعدة لتسجيل معالج زر إلغاء الحظر المباشر
 def register_direct_unban_handler(dp: Dispatcher):
@@ -91,7 +99,10 @@ def register_direct_unban_handler(dp: Dispatcher):
         user_id_to_unban = int(call.data.split(":")[-1])
         if await db.unban_user(user_id_to_unban):
             await call.answer(f"✅ تم إلغاء حظر المستخدم {user_id_to_unban}")
-            await call.message.edit_text(call.message.text + "\n\n---\n*تم إلغاء الحظر بنجاح.*")
+            try:
+                await call.message.edit_text(call.message.html_text + "\n\n---\n<i>تم إلغاء الحظر بنجاح.</i>")
+            except Exception:
+                pass
         else:
             await call.answer("⚠️ المستخدم ليس محظوراً.", show_alert=True)
 
