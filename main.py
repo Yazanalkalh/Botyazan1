@@ -17,6 +17,9 @@ from bot.utils.loader import discover_handlers
 from bot.database.manager import db
 from bot.middlewares.admin_filter import IsAdminFilter
 from bot.middlewares.ban_middleware import BanMiddleware
+# --- 💡 الإضافة الجديدة: نستورد بروتوكول سيربيروس 💡 ---
+from bot.middlewares.antiflood_middleware import AntiFloodMiddleware, register_direct_unban_handler
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,14 +31,16 @@ async def start_bot():
     storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
     dp = Dispatcher(bot, storage=storage)
 
+    # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
     dp.middleware.setup(BanMiddleware())
+    # --- 💡 الإضافة الجديدة: تفعيل بروتوكول سيربيروس 💡 ---
+    dp.middleware.setup(AntiFloodMiddleware())
 
     if not await db.connect_to_database(MONGO_URI):
         logger.critical("❌ فشل الاتصال بقاعدة البيانات، إيقاف البوت.")
         return
 
-    # --- 💡 الإضافة الجديدة: إعادة تحميل المهام المجدولة 💡 ---
     await load_pending_jobs(bot)
 
     all_handler_modules = discover_handlers()
@@ -55,6 +60,9 @@ async def start_bot():
                     getattr(module, attr_name)(dp)
                     logger.info(f"✅ [أولوية منخفضة] تم تسجيل: {attr_name}")
             break
+            
+    # --- 💡 الإضافة الجديدة: تسجيل معالج زر إلغاء الحظر المباشر 💡 ---
+    register_direct_unban_handler(dp)
 
     logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
     await dp.start_polling()
@@ -78,7 +86,6 @@ async def start_web_server():
         await runner.cleanup()
 
 async def main():
-    # --- 💡 الإضافة الجديدة: بدء تشغيل محرك الجدولة 💡 ---
     scheduler.start()
     
     await asyncio.gather(
@@ -91,4 +98,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("...إيقاف البوت")
-        scheduler.shutdown() # إيقاف آمن للمجدول
+        scheduler.shutdown()
