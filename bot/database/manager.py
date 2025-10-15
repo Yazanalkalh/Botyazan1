@@ -166,6 +166,21 @@ class DatabaseManager:
         if not self.is_connected(): return False
         return await self.banned_users_collection.count_documents({"_id": user_id}) > 0
     
-    # ... (بقية الدوال تبقى كما هي)
+    # --- [START] الإضافة لحل المشكلة ---
+    async def get_all_pending_scheduled_posts(self):
+        """
+        تجلب هذه الدالة كل المنشورات المجدولة من قاعدة البيانات.
+        """
+        if not self.is_connected():
+            return []
+        try:
+            # ببساطة نرجع كل المستندات من الكولكشن المخصص للمنشورات المجدولة
+            cursor = self.scheduled_posts_collection.find({})
+            posts = await cursor.to_list(length=None)
+            return posts
+        except Exception as e:
+            logger.error(f"❌ حدث خطأ أثناء جلب المنشورات المجدولة: {e}")
+            return []
+    # --- [END] الإضافة لحل المشكلة ---
 
 db = DatabaseManager()
