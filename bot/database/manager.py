@@ -26,7 +26,6 @@ class DatabaseManager:
             
             self.db = self.client.get_database("IslamicBotDBAiogram")
             
-            # Define all collections
             self.users_collection = self.db.users
             self.texts_collection = self.db.texts
             self.reminders_collection = self.db.reminders
@@ -50,7 +49,6 @@ class DatabaseManager:
             return False
 
     async def initialize_defaults(self):
-        # This function contains all default UI texts and settings
         if not self.is_connected(): return
         defaults = {
             "admin_panel_title": "أهلاً بك في لوحة التحكم.", "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
@@ -73,7 +71,6 @@ class DatabaseManager:
         await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$setOnInsert": {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}}, upsert=True)
         await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
 
-    # --- Cache and Text Management ---
     async def load_texts_into_cache(self):
         if not self.is_connected(): return
         logger.info("🚀 Caching all UI texts...")
@@ -90,7 +87,6 @@ class DatabaseManager:
         await self.texts_collection.update_one({"_id": text_id}, {"$set": {"text": new_text}}, upsert=True)
         TEXTS_CACHE[text_id] = new_text
 
-    # --- User and Ban Management ---
     async def add_user(self, user) -> bool:
         if not self.is_connected(): return False
         user_data = {'first_name': user.first_name or "", 'last_name': getattr(user, 'last_name', "") or "", 'username': user.username or ""}
@@ -129,7 +125,6 @@ class DatabaseManager:
         active_user_ids = all_user_ids - banned_user_ids
         return list(active_user_ids)
 
-    # --- Anti-Flood (Cerberus) Protocol ---
     async def get_antiflood_settings(self):
         if not self.is_connected(): return {}
         doc = await self.settings_collection.find_one({"_id": "antiflood_settings"})
@@ -143,13 +138,31 @@ class DatabaseManager:
             {"_id": "antiflood_settings"}, {"$set": {key: value}}, upsert=True
         )
 
-    async def record_antiflood_violation(self, user_id: int):
+    # --- 💡 تم إصلاح هذه الدالة بالكامل لتصبح أذكى 💡 ---
+    async def record_antiflood_violation(self, user_id: int, reset_after_hours: int = 1):
+        """
+        يسجل مخالفة للمستخدم ويقوم بإعادة تعيين العداد تلقائياً إذا كانت المخالفة السابقة قديمة.
+        """
         if not self.is_connected(): return
-        await self.antiflood_violations_collection.update_one(
-            {"user_id": user_id},
-            {"$inc": {"count": 1}, "$set": {"last_violation": datetime.utcnow()}},
-            upsert=True
-        )
+
+        doc = await self.antiflood_violations_collection.find_one({"user_id": user_id})
+        now = datetime.utcnow()
+        time_threshold = now - timedelta(hours=reset_after_hours)
+
+        if not doc or doc.get("last_violation") < time_threshold:
+            # إذا لم يكن هناك سجل، أو كان السجل قديماً، نبدأ العد من 1
+            await self.antiflood_violations_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"count": 1, "last_violation": now}},
+                upsert=True
+            )
+        else:
+            # إذا كان السجل حديثاً، نزيد العداد فقط
+            await self.antiflood_violations_collection.update_one(
+                {"user_id": user_id},
+                {"$inc": {"count": 1}, "$set": {"last_violation": now}},
+                upsert=True
+            )
 
     async def get_user_violation_count(self, user_id: int, within_hours: int = 1) -> int:
         if not self.is_connected(): return 0
@@ -159,7 +172,6 @@ class DatabaseManager:
         })
         return doc.get("count", 0) if doc else 0
 
-    # --- Scheduled Posts ---
     async def add_scheduled_post(self, job_id: str, message_data: dict, target_channels: list, run_date: datetime):
         if not self.is_connected(): return
         await self.scheduled_posts_collection.insert_one({"_id": job_id, "message_data": message_data, "target_channels": target_channels, "run_date": run_date, "status": "pending"})
@@ -185,7 +197,6 @@ class DatabaseManager:
         if not self.is_connected(): return
         await self.scheduled_posts_collection.update_one({"_id": job_id}, {"$set": {"status": "done"}})
     
-    # --- Publishing Channels ---
     async def get_publishing_channels(self, page: int = 1, limit: int = 10):
         if not self.is_connected(): return []
         return await self.publishing_channels_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
@@ -209,7 +220,6 @@ class DatabaseManager:
             return result.deleted_count > 0
         except Exception: return False
     
-    # --- Statistics and Counts ---
     async def get_users_count(self):
         if not self.is_connected(): return 0
         return await self.users_collection.count_documents({})
@@ -240,7 +250,6 @@ class DatabaseManager:
             "reminders": results[3]
         }
     
-    # --- General Helper Functions ---
     async def get_security_settings(self):
         if not self.is_connected(): return {}
         doc = await self.settings_collection.find_one({"_id": "security_settings"})
@@ -334,8 +343,6 @@ class DatabaseManager:
             return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
         
-    # --- All missing functions from the report have been added here ---
-    
     async def get_timezone(self) -> dict:
         if not self.is_connected(): return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
         doc = await self.settings_collection.find_one({"_id": "timezone"})
@@ -408,7 +415,6 @@ class DatabaseManager:
         result = await self.settings_collection.delete_one({"_id": "auto_publication_message"})
         return result.deleted_count > 0
 
-    # --- Handling incorrect calls for collections ---
     def users(self): return self.users_collection
     def texts(self): return self.texts_collection
     def reminders(self): return self.reminders_collection
