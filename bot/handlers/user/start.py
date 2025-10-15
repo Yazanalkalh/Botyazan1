@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# قمنا باستيراد هذه المكتبة لتنفيذ الطلبات بشكل متوازي بدلاً من التوالي، وهذا هو مفتاح السرعة
 import asyncio
 
 from aiogram import types, Dispatcher, Bot
@@ -30,61 +29,56 @@ async def notify_admin_of_new_user(user: types.User, bot: Bot):
     except Exception as e:
         print(f"فشل إرسال إشعار المستخدم الجديد: {e}")
 
-# --- 💡 تم تحديث هذه الدالة بالكامل لتصبح أسرع بمراحل 💡 ---
 async def is_user_subscribed(user_id: int, bot: Bot) -> bool:
-    """
-    وظيفة "حارس البوابة" فائقة السرعة:
-    1. تتحقق أولاً مما إذا كانت الميزة مفعلة.
-    2. ثم تتحقق من اشتراك المستخدم في كل القنوات المطلوبة (بشكل متوازٍ وفوري).
-    """
+    """وظيفة "حارس البوابة" فائقة السرعة للتحقق من الاشتراكات بشكل متوازٍ."""
     is_enabled = await db.get_force_subscribe_status()
     if not is_enabled:
-        return True # إذا كانت الميزة معطلة، نسمح للجميع بالمرور فوراً
+        return True
 
     required_channels = await db.get_subscription_channels()
     if not required_channels:
-        return True # لا توجد قنوات = الجميع مسموح له بالمرور فوراً
+        return True
 
-    # --- بداية التحسين السحري ---
-    
-    # دالة مساعدة صغيرة للتحقق من قناة واحدة، هذا يجعل الكود أنظف
     async def check_channel(channel_username: str):
         try:
             member = await bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
-            # نتحقق إذا كان المستخدم عضواً أو مديراً أو منشئاً
             return member.status in ["creator", "administrator", "member"]
         except (ChatNotFound, BadRequest):
             print(f"تحذير: لا يمكن التحقق من القناة @{channel_username}. سنتجاوزها مؤقتاً.")
-            return True # نتجاوز القناة التي بها خطأ حتى لا يتوقف البوت
+            return True
 
-    # هنا السحر: نُنشئ قائمة بمهام التحقق (مهمة لكل قناة) ليتم تشغيلها كلها دفعة واحدة
     tasks = [check_channel(channel) for channel in required_channels]
-    
-    # asyncio.gather يقوم بتشغيل كل المهام في نفس الوقت وينتظر انتهاءها جميعاً
-    # بدلاً من انتظار كل واحدة على حدة، مما يوفر الكثير من الوقت
     subscription_statuses = await asyncio.gather(*tasks)
-    
-    # --- نهاية التحسين السحري ---
-
-    # إذا كانت كل النتائج "True"، فهذا يعني أن المستخدم مشترك في جميع القنوات
     return all(subscription_statuses)
 
-
+# --- 💡 تم تحديث هذه الدالة بالكامل لتصبح أسرع 💡 ---
 async def show_main_menu(message: types.Message, user: types.User, edit_mode: bool = False):
     """
-    وظيفة مركزية ومحسّنة لعرض القائمة الرئيسية.
+    وظيفة مركزية فائقة السرعة لعرض القائمة الرئيسية.
+    تقوم بجلب كل النصوص المطلوبة من قاعدة البيانات دفعة واحدة.
     """
     keyboard = types.InlineKeyboardMarkup(row_width=3)
-    date_button_text = await db.get_text("date_button")
-    time_button_text = await db.get_text("time_button")
-    reminder_button_text = await db.get_text("reminder_button")
+    
+    # --- بداية التحسين: جلب كل نصوص القائمة دفعة واحدة ---
+    texts_to_fetch = [
+        "date_button",
+        "time_button",
+        "reminder_button",
+        "welcome_message"
+    ]
+    # نستخدم asyncio.gather لجلب كل النصوص في نفس الوقت بدلاً من انتظار كل واحد على حدة
+    # هذا يجعل عرض القائمة الرئيسية وزر "العودة" شبه فوري
+    results = await asyncio.gather(*(db.get_text(text_key) for text_key in texts_to_fetch))
+
+    # الآن نوزع النصوص التي حصلنا عليها على المتغيرات الخاصة بها بالترتيب
+    date_button_text, time_button_text, reminder_button_text, template = results
+    # --- نهاية التحسين ---
+
     keyboard.add(
         types.InlineKeyboardButton(text=date_button_text, callback_data="show_date"),
         types.InlineKeyboardButton(text=time_button_text, callback_data="show_time"),
         types.InlineKeyboardButton(text=reminder_button_text, callback_data="show_reminder")
     )
-
-    template = await db.get_text("welcome_message")
 
     name_user_mention = user.get_mention(as_html=True)
     username_mention = f"@{user.username}" if user.username else "لا يوجد"
@@ -100,7 +94,7 @@ async def show_main_menu(message: types.Message, user: types.User, edit_mode: bo
         try:
             await message.edit_text(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
         except Exception:
-            pass
+            pass # نتجنب أي خطأ قد يحدث إذا كانت الرسالة لم تتغير
     else:
         await message.answer(text=processed_text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
