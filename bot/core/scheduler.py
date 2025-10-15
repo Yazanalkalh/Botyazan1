@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import logging
+# --- 💡 بداية الإصلاح: قمنا بإضافة السطر التالي 💡 ---
+# هذا السطر ضروري لكي يتمكن الملف من التعامل مع الوقت والتاريخ ومقارنتهما
+import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
-
-# --- 💡 تم حذف "from bot.database.manager import db" من هنا لكسر الحلقة 💡 ---
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,6 @@ async def send_scheduled_post(bot: Bot, job_id: str, message_data: dict, target_
     """
     الدالة التي يتم استدعاؤها بواسطة المؤقت لإرسال المنشور.
     """
-    # --- 💡 نستدعي صندوق الأدوات فقط عند الحاجة الفعلية إليه 💡 ---
     from bot.database.manager import db
 
     logger.info(f"⏰ Executing scheduled job: {job_id}")
@@ -47,15 +47,15 @@ async def load_pending_jobs(bot: Bot):
     """
     يقرأ كل المهام المعلقة من قاعدة البيانات عند بدء التشغيل ويعيد جدولتها.
     """
-    # --- 💡 نستدعي صندوق الأدوات فقط عند الحاجة الفعلية إليه 💡 ---
     from bot.database.manager import db
     
     logger.info(" re-loading pending scheduled jobs from database...")
     pending_jobs = await db.get_all_pending_scheduled_posts()
     count = 0
     for job_data in pending_jobs:
-        # التأكد من أن الوقت المجدول لم يمض بعد
-        if job_data['run_date'] > datetime.datetime.now():
+        # --- 💡 نهاية الإصلاح: الآن هذا السطر سيعمل بدون مشاكل 💡 ---
+        # نتأكد من أن الوقت المجدول لم يمض بعد
+        if job_data['run_date'] > datetime.datetime.now(datetime.timezone.utc).astimezone(scheduler.timezone):
             scheduler.add_job(
                 send_scheduled_post,
                 "date",
