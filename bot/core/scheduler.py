@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import logging
-# --- 💡 بداية الإصلاح: قمنا بإضافة السطر التالي 💡 ---
-# هذا السطر ضروري لكي يتمكن الملف من التعامل مع الوقت والتاريخ ومقارنتهما
 import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
@@ -53,21 +51,32 @@ async def load_pending_jobs(bot: Bot):
     pending_jobs = await db.get_all_pending_scheduled_posts()
     count = 0
     for job_data in pending_jobs:
-        # --- 💡 نهاية الإصلاح: الآن هذا السطر سيعمل بدون مشاكل 💡 ---
-        # نتأكد من أن الوقت المجدول لم يمض بعد
-        if job_data['run_date'] > datetime.datetime.now(datetime.timezone.utc).astimezone(scheduler.timezone):
-            scheduler.add_job(
-                send_scheduled_post,
-                "date",
-                run_date=job_data['run_date'],
-                id=job_data['_id'],
-                args=[bot, job_data['_id'], job_data['message_data'], job_data['target_channels']],
-                replace_existing=True
-            )
-            count += 1
-        else:
-            # إذا كان الوقت قد مضى، نضع علامة "منفذ" على المهمة لتجنب إرسالها
-            await db.mark_scheduled_post_as_done(job_data['_id'])
-            logger.warning(f"Skipped expired job: {job_data['_id']}")
+        try:
+            # --- 💡 بداية الإصلاح النهائي لمشكلة المناطق الزمنية 💡 ---
+            # الوقت المحفوظ في قاعدة البيانات يكون "غافلاً" (naive), لكنه مخزن بتوقيت UTC.
+            # الخطوة 1: نجعله "واعياً" (aware) عن طريق إخباره أن منطقته الزمنية هي UTC.
+            run_date_aware = job_data['run_date'].replace(tzinfo=datetime.timezone.utc)
+            
+            # الخطوة 2: نحصل على الوقت الحالي وهو أيضاً "واعٍ" وبتوقيت UTC.
+            now_aware = datetime.datetime.now(datetime.timezone.utc)
+
+            # الخطوة 3: الآن المقارنة آمنة وصحيحة لأن كلا الوقتين يعرفان منطقتهما الزمنية.
+            if run_date_aware > now_aware:
+                scheduler.add_job(
+                    send_scheduled_post,
+                    "date",
+                    run_date=job_data['run_date'], # الجدولة تستخدم الوقت الأصلي
+                    id=job_data['_id'],
+                    args=[bot, job_data['_id'], job_data['message_data'], job_data['target_channels']],
+                    replace_existing=True
+                )
+                count += 1
+            else:
+                # إذا كان الوقت قد مضى، نضع علامة "منفذ" على المهمة لتجنب إرسالها
+                await db.mark_scheduled_post_as_done(job_data['_id'])
+                logger.warning(f"Skipped expired job: {job_data['_id']}")
+            # --- 💡 نهاية الإصلاح النهائي 💡 ---
+        except Exception as e:
+            logger.error(f"Failed to load job {job_data.get('_id', 'UNKNOWN')}: {e}")
 
     logger.info(f"✅ Reloaded {count} pending jobs.")
