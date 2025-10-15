@@ -6,6 +6,7 @@ from pymongo.errors import ConnectionFailure
 from bson.objectid import ObjectId
 import datetime
 import asyncio
+from aiogram import types # استيراد مهم للدالة الجديدة
 
 from bot.core.cache import TEXTS_CACHE
 
@@ -94,18 +95,50 @@ class DatabaseManager:
         await self.texts_collection.update_one({"_id": text_id}, {"$set": {"text": new_text}}, upsert=True)
         TEXTS_CACHE[text_id] = new_text
 
-    # --- (كل بقية الدوال التي بنيناها معاً موجودة هنا) ---
     async def get_all_editable_texts(self):
         if not self.is_connected(): return []
         cursor = self.texts_collection.find({}, {"_id": 1})
         docs = await cursor.sort("_id", 1).to_list(length=None)
         return [doc['_id'] for doc in docs]
+
     async def ping_database(self) -> bool:
         if not self.client: return False
         try:
             await self.client.admin.command("ping")
             return True
         except ConnectionFailure: return False
+
+    # --- [START] الإضافة الجديدة ---
+    async def add_user(self, user: types.User) -> bool:
+        """
+        يضيف مستخدمًا جديدًا إلى قاعدة البيانات إذا لم يكن موجودًا بالفعل.
+        ترجع 'True' إذا كان المستخدم جديدًا، و'False' إذا كان موجودًا مسبقًا.
+        """
+        if not self.is_connected():
+            return False
+        
+        user_document = {
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "username": user.username,
+            "language_code": user.language_code,
+        }
+        
+        update_result = await self.users_collection.update_one(
+            {"_id": user.id},
+            {
+                "$set": user_document,
+                "$setOnInsert": {"join_date": datetime.datetime.utcnow()}
+            },
+            upsert=True
+        )
+        
+        # إذا تم إنشاء مستند جديد، فإن 'upserted_id' لن يكون None
+        if update_result.upserted_id:
+            logger.info(f"👤 مستخدم جديد انضم: {user.full_name} (ID: {user.id})")
+            return True
+        return False
+    # --- [END] الإضافة الجديدة ---
     
     # --- دوال الحماية والأمان ---
     async def get_security_settings(self):
@@ -166,21 +199,16 @@ class DatabaseManager:
         if not self.is_connected(): return False
         return await self.banned_users_collection.count_documents({"_id": user_id}) > 0
     
-    # --- [START] الإضافة لحل المشكلة ---
+    # --- الدالة من التصحيح السابق ---
     async def get_all_pending_scheduled_posts(self):
-        """
-        تجلب هذه الدالة كل المنشورات المجدولة من قاعدة البيانات.
-        """
         if not self.is_connected():
             return []
         try:
-            # ببساطة نرجع كل المستندات من الكولكشن المخصص للمنشورات المجدولة
             cursor = self.scheduled_posts_collection.find({})
             posts = await cursor.to_list(length=None)
             return posts
         except Exception as e:
             logger.error(f"❌ حدث خطأ أثناء جلب المنشورات المجدولة: {e}")
             return []
-    # --- [END] الإضافة لحل المشكلة ---
 
 db = DatabaseManager()
