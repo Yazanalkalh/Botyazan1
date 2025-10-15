@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class AntiFloodMiddleware(BaseMiddleware):
     """
-    بروتوكول سيربيروس 3.0: الإصدار النهائي مع إشعارات للمستخدم ومنطق حظر فعال.
+    بروتوكول سيربيروس 3.1: إصدار مُصحَح يضمن استمرارية التجاهل (الكتم) بشكل صحيح.
     """
     async def on_pre_process_message(self, message: types.Message, data: dict):
         user = message.from_user
@@ -29,11 +29,12 @@ class AntiFloodMiddleware(BaseMiddleware):
         storage = dp.storage
         user_id = user.id
         
-        user_data = await storage.get_data(chat=user_id, user=user_id)
+        user_data = await storage.get_data(chat=user_id, user=user_id) or {}
         mute_until = user_data.get("mute_until")
         now = datetime.now()
 
         # الخطوة 1: التحقق مما إذا كان المستخدم قيد التجاهل (الكتم المؤقت)
+        # هذا الجزء سيعمل الآن بشكل صحيح لأننا لن نحذف 'mute_until' عن طريق الخطأ
         if mute_until and now < datetime.fromisoformat(mute_until):
             raise CancelHandler() # إذا كان مقيداً، نتجاهل الرسالة تماماً
 
@@ -47,7 +48,6 @@ class AntiFloodMiddleware(BaseMiddleware):
         # الخطوة 2: التحقق من حدوث إزعاج
         if len(recent_timestamps) >= rate_limit:
             # تم اكتشاف إزعاج، لنبدأ بتطبيق العقوبات
-            await storage.set_data(chat=user_id, user=user_id, data={"antiflood_timestamps": []})
             
             # نسجل المخالفة ونحصل على العدد الحالي
             await db.record_antiflood_violation(user_id)
@@ -60,40 +60,49 @@ class AntiFloodMiddleware(BaseMiddleware):
                 ban_notification = await db.get_text("af_ban_notification")
                 admin_notification_text = f"🚫 تم الحظر التلقائي\n\nالمستخدم: {user.get_mention(as_html=True)} (`{user_id}`)\nالسبب: الإزعاج المتكرر"
                 
-                # إرسال إشعار الحظر للمستخدم
                 try: 
                     await message.answer(ban_notification)
                 except TelegramAPIError as e:
                     logger.warning(f"Could not send ban notification to {user_id}: {e}")
                 
-                # إرسال إشعار للمدير مع زر إلغاء الحظر
                 keyboard = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("✅ إلغاء الحظر", callback_data=f"bm_unban_direct:{user_id}"))
                 await message.bot.send_message(ADMIN_USER_ID, admin_notification_text, reply_markup=keyboard, parse_mode="HTML")
+                
+                # نمسح بيانات المستخدم من الذاكرة بعد حظره
+                await storage.set_data(chat=user_id, user=user_id, data={})
 
             else:
                 # --- العقوبة الأولى: الكتم المؤقت (التجاهل) ---
                 mute_duration = settings.get("mute_duration", 30)
                 mute_end_time = now + timedelta(minutes=mute_duration)
                 
-                # تسجيل وقت انتهاء التجاهل في ذاكرة البوت
-                await storage.update_data(chat=user_id, user=user_id, data={"mute_until": mute_end_time.isoformat()})
+                # نحصل على البيانات الحالية ونضيف إليها وقت التجاهل
+                current_data = await storage.get_data(chat=user_id, user=user_id) or {}
+                current_data['mute_until'] = mute_end_time.isoformat()
+                current_data['antiflood_timestamps'] = [] # نفرغ الطوابع الزمنية بعد العقوبة
+                await storage.set_data(chat=user_id, user=user_id, data=current_data)
 
                 mute_notification = (await db.get_text("af_mute_notification")).format(duration=mute_duration)
                 admin_notification_text = f"🔇 تم تجاهل المستخدم {user.get_mention(as_html=True)} (`{user_id}`) لمدة {mute_duration} دقيقة."
 
-                # إرسال إشعار الكتم للمستخدم
                 try: 
                     await message.answer(mute_notification)
                 except TelegramAPIError as e: 
                     logger.warning(f"Could not send mute notification to {user_id}: {e}")
 
-                # إرسال إشعار للمدير
                 await message.bot.send_message(ADMIN_USER_ID, admin_notification_text, parse_mode="HTML")
 
             raise CancelHandler() # نوقف معالجة الرسالة بعد تطبيق العقوبة
         else:
-            # إذا لم يكن هناك إزعاج، نحدث قائمة التوقيتات فقط
-            await storage.update_data(chat=user_id, user=user_id, data={"antiflood_timestamps": recent_timestamps})
+            # --- 💡 بداية الإصلاح النهائي 💡 ---
+            # الكود القديم كان يمسح 'mute_until'. الكود الجديد يحافظ عليه.
+            # نحضر البيانات الحالية للمستخدم
+            current_data = await storage.get_data(chat=user_id, user=user_id) or {}
+            # نحدّث فقط قائمة الطوابع الزمنية
+            current_data['antiflood_timestamps'] = recent_timestamps
+            # نحفظ البيانات المحدثة كاملة دون أن نفقد شيئاً
+            await storage.set_data(chat=user_id, user=user_id, data=current_data)
+            # --- 💡 نهاية الإصلاح النهائي 💡 ---
 
 
 def register_direct_unban_handler(dp: Dispatcher):
