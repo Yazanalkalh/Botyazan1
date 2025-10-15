@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class AntiFloodMiddleware(BaseMiddleware):
     """
-    بروتوكول سيربيروس 2.1: الإصدار النهائي مع "فترة التهدئة" لمنع الحظر الخاطئ.
+    بروتوكول سيربيروس 2.2: الإصدار النهائي مع "فترة المناعة" لمنع العقوبات المتتالية الخاطئة.
     """
     async def on_pre_process_message(self, message: types.Message, data: dict):
         user = message.from_user
@@ -35,8 +35,8 @@ class AntiFloodMiddleware(BaseMiddleware):
 
         now = datetime.now()
         
-        # --- 💡 الإصلاح: إضافة "فترة التهدئة" 💡 ---
-        # إذا تمت معاقبة المستخدم في آخر 10 ثوانٍ، نتجاهل رسائله فقط
+        # --- 💡 الإصلاح الجذري: فترة المناعة المؤقتة 💡 ---
+        # إذا تمت معاقبة المستخدم في آخر 10 ثوانٍ، نتجاهل رسائله تماماً
         if last_punishment_time and (now - last_punishment_time < timedelta(seconds=10)):
             raise CancelHandler()
 
@@ -51,13 +51,13 @@ class AntiFloodMiddleware(BaseMiddleware):
         ]
 
         if len(recent_timestamps) >= rate_limit:
-            # تم تجاوز الحد، نبدأ الإجراءات ونسجل وقت العقوبة لمنع التكرار
+            # تم تجاوز الحد، نبدأ الإجراءات ونسجل وقت العقوبة لمنح "المناعة"
             await storage.set_data(chat=user_id, user=user_id, data={"antiflood_timestamps": [], "last_punishment_time": now})
             
             await db.record_antiflood_violation(user_id)
-            violation_count = await db.get_user_violation_count(user_id)
+            violation_count = await db.get_user_violation_count(user_id, within_hours=1)
             
-            if violation_count >= 2: # المخالفة الثانية = حظر
+            if violation_count >= 2: # المخالفة الثانية خلال ساعة = حظر
                 await db.ban_user(user_id)
                 ban_notification = await db.get_text("af_ban_notification")
                 admin_notification_text = f"🚫 تم الحظر التلقائي\n\nالمستخدم: {user.get_mention(as_html=True)} (`{user_id}`)\nالسبب: الإزعاج المتكرر"
@@ -90,7 +90,6 @@ class AntiFloodMiddleware(BaseMiddleware):
 
             raise CancelHandler()
         else:
-            # إذا لم يتم تجاوز الحد، نقوم بتحديث الذاكرة المركزية بالسجل النظيف
             await storage.update_data(chat=user_id, user=user_id, data={"antiflood_timestamps": recent_timestamps})
 
 # دالة مساعدة لتسجيل معالج زر إلغاء الحظر المباشر
