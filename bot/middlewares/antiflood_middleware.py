@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class AntiFloodMiddleware(BaseMiddleware):
     """
-    بروتوكول سيربيروس 2.2: الإصدار النهائي مع "فترة المناعة" لمنع العقوبات المتتالية الخاطئة.
+    بروتوكول سيربيروس 2.3: الإصدار النهائي مع ترتيب منطقي صحيح لفترة التهدئة.
     """
     async def on_pre_process_message(self, message: types.Message, data: dict):
         user = message.from_user
@@ -35,11 +35,6 @@ class AntiFloodMiddleware(BaseMiddleware):
 
         now = datetime.now()
         
-        # --- 💡 الإصلاح الجذري: فترة المناعة المؤقتة 💡 ---
-        # إذا تمت معاقبة المستخدم في آخر 10 ثوانٍ، نتجاهل رسائله تماماً
-        if last_punishment_time and (now - last_punishment_time < timedelta(seconds=10)):
-            raise CancelHandler()
-
         timestamps.append(now)
 
         rate_limit = settings.get("rate_limit", 7)
@@ -50,8 +45,17 @@ class AntiFloodMiddleware(BaseMiddleware):
             if now - ts < timedelta(seconds=time_window)
         ]
 
+        # --- 💡 الإصلاح الجذري: إعادة ترتيب المنطق بالكامل 💡 ---
         if len(recent_timestamps) >= rate_limit:
-            # تم تجاوز الحد، نبدأ الإجراءات ونسجل وقت العقوبة لمنح "المناعة"
+            # تم اكتشاف حدث إزعاج. الآن نتحقق من فترة التهدئة.
+            
+            # 1. التحقق من فترة المناعة (التهدئة)
+            if last_punishment_time and (now - last_punishment_time < timedelta(seconds=10)):
+                # نحن في فترة التهدئة، تجاهل الرسالة بهدوء وامنعها من الوصول لأي مكان آخر.
+                raise CancelHandler()
+
+            # 2. إذا لم نكن في فترة التهدئة، فهذه مخالفة جديدة تستحق العقاب.
+            # نبدأ الإجراءات ونسجل وقت العقوبة لمنح "المناعة" للمخالفات التالية.
             await storage.set_data(chat=user_id, user=user_id, data={"antiflood_timestamps": [], "last_punishment_time": now})
             
             await db.record_antiflood_violation(user_id)
@@ -70,7 +74,7 @@ class AntiFloodMiddleware(BaseMiddleware):
 
             else: # المخالفة الأولى = تقييد
                 mute_duration = settings.get("mute_duration", 30)
-                mute_end_time = datetime.now() + timedelta(minutes=mute_duration)
+                mute_end_time = now + timedelta(minutes=mute_duration)
                 
                 mute_notification = (await db.get_text("af_mute_notification")).format(duration=mute_duration)
                 admin_notification_text = f"🔇 تم تقييد المستخدم {user.get_mention(as_html=True)} (`{user_id}`) لمدة {mute_duration} دقيقة."
@@ -90,9 +94,10 @@ class AntiFloodMiddleware(BaseMiddleware):
 
             raise CancelHandler()
         else:
+            # إذا لم يتم تجاوز الحد، نقوم بتحديث الذاكرة المركزية بالسجل النظيف
             await storage.update_data(chat=user_id, user=user_id, data={"antiflood_timestamps": recent_timestamps})
 
-# دالة مساعدة لتسجيل معالج زر إلغاء الحظر المباشر
+# (بقية الملف تبقى كما هي)
 def register_direct_unban_handler(dp: Dispatcher):
     async def direct_unban(call: types.CallbackQuery):
         user_id_to_unban = int(call.data.split(":")[-1])
