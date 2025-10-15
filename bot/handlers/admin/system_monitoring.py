@@ -27,7 +27,7 @@ def format_uptime(duration: datetime.timedelta) -> str:
 
 async def show_system_status(call: types.CallbackQuery):
     """
-    يجمع معلومات حيوية ومتقدمة عن حالة البوت والخادم ويعرضها.
+    يجمع معلومات حيوية ومتقدمة عن حالة البوت والخادم ويعرضها بشكل واضح.
     """
     await call.answer("جاري فحص الأنظمة...")
 
@@ -45,18 +45,27 @@ async def show_system_status(call: types.CallbackQuery):
     latency_ms = (time.time() - start_ping_time) * 1000
     latency_str = f"{int(latency_ms)} ميلي ثانية"
     
-    # --- 💡 بداية الإضافة: قياس أداء الخادم 💡 ---
+    # --- 3. قياس أداء الخادم ---
     cpu_usage = psutil.cpu_percent()
+    
+    # --- 💡 بداية التعديل: حساب الذاكرة بشكل أوضح 💡 ---
     ram_info = psutil.virtual_memory()
-    ram_usage_percent = ram_info.percent
+    total_ram_mb = ram_info.total / (1024 * 1024)
+    
     process = psutil.Process(os.getpid())
-    ram_usage_mb = process.memory_info().rss / (1024 * 1024)
-    # --- 💡 نهاية الإضافة 💡 ---
+    bot_ram_mb = process.memory_info().rss / (1024 * 1024)
+    
+    # نحسب نسبة استهلاك البوت من إجمالي الذاكرة المتاحة
+    bot_ram_percent = (bot_ram_mb / total_ram_mb) * 100
+    
+    # نجهز النص النهائي لعرضه
+    ram_usage_str = f"{bot_ram_percent:.1f}% ({bot_ram_mb:.1f} MB / {total_ram_mb:.0f} MB)"
+    # --- 💡 نهاية التعديل 💡 ---
 
-    # --- 3. معلومات النشر ---
+    # --- 4. معلومات النشر ---
     last_update_str = START_TIME.strftime("%Y/%m/%d - %I:%M %p").replace("AM", "صباحاً").replace("PM", "مساءً")
 
-    # --- 4. تجميع الرسالة (مع القسم الجديد) ---
+    # --- 5. تجميع الرسالة ---
     title = await db.get_text("sm_title")
     overall_status = await db.get_text("sm_status_ok") if db_ok else await db.get_text("sm_status_degraded")
 
@@ -69,10 +78,10 @@ async def show_system_status(call: types.CallbackQuery):
         f"**{(await db.get_text('sm_performance'))}:**\n"
         f"  - {(await db.get_text('sm_uptime'))}: `{uptime_str}`\n"
         f"  - {(await db.get_text('sm_tg_latency'))}: `{latency_str}`\n\n"
-        # --- 💡 إضافة قسم صحة الخادم إلى الرسالة 💡 ---
         f"**{(await db.get_text('sm_server_health'))}:**\n"
         f"  - {(await db.get_text('sm_cpu_usage'))}: `{cpu_usage}%`\n"
-        f"  - {(await db.get_text('sm_ram_usage'))}: `{ram_usage_percent}% ({ram_usage_mb:.1f} MB)`\n\n"
+        # --- 💡 استخدام النص الجديد للذاكرة 💡 ---
+        f"  - {(await db.get_text('sm_ram_usage'))}: `{ram_usage_str}`\n\n"
         f"**{(await db.get_text('sm_deploy_info'))}:**\n"
         f"  - {(await db.get_text('sm_last_update'))}: `{last_update_str}`"
     )
