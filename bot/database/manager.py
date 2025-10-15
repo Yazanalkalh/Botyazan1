@@ -132,18 +132,6 @@ class DatabaseManager:
             return True
         except ConnectionFailure: return False
         
-    async def get_auto_replies(self, page: int = 1, limit: int = 10):
-        if not self.is_connected(): return []
-        return await self.auto_replies_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
-        
-    async def add_reminder(self, text: str):
-        if not self.is_connected(): return
-        await self.reminders_collection.insert_one({"text": text})
-        
-    async def get_reminders(self, page: int = 1, limit: int = 10):
-        if not self.is_connected(): return []
-        return await self.reminders_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
-        
     async def add_auto_reply(self, keyword: str, message: dict):
         if not self.is_connected(): return
         keyword_lower = keyword.lower()
@@ -341,11 +329,6 @@ class DatabaseManager:
         await self.banned_users_collection.insert_one({"_id": user_id, "ban_date": datetime.datetime.utcnow()})
         return True
         
-    async def unban_user(self, user_id: int):
-        if not self.is_connected(): return False
-        result = await self.banned_users_collection.delete_one({"_id": user_id})
-        return result.deleted_count > 0
-        
     async def is_user_banned(self, user_id: int) -> bool:
         if not self.is_connected(): return False
         return await self.banned_users_collection.count_documents({"_id": user_id}) > 0
@@ -354,9 +337,28 @@ class DatabaseManager:
         if not self.is_connected(): return []
         return await self.banned_users_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
         
-    async def get_user_violation_count(self, user_id: int) -> int:
-        if not self.is_connected(): return 0
-        doc = await self.antiflood_violations_collection.find_one({"_id": user_id})
-        return doc.get("count", 0) if doc else 0
+    async def get_reminders(self, page: int = 1, limit: int = 10):
+        if not self.is_connected(): return []
+        return await self.reminders_collection.find().skip((page-1)*limit).limit(limit).to_list(length=limit)
+        
+    async def get_antiflood_settings(self):
+        if not self.is_connected(): return {}
+        doc = await self.settings_collection.find_one({"_id": "antiflood_settings"})
+        return doc or {}
+
+    async def update_antiflood_setting(self, key: str, value):
+        if not self.is_connected(): return
+        valid_keys = ["enabled", "rate_limit", "time_window", "mute_duration"]
+        if key not in valid_keys: return
+        await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$set": {key: value}}, upsert=True)
+        
+    async def record_antiflood_violation(self, user_id: int):
+        if not self.is_connected(): return
+        await self.antiflood_violations_collection.update_one({"_id": user_id}, {"$inc": {"count": 1}, "$set": {"last_violation": datetime.datetime.utcnow()}}, upsert=True)
+
+    async def unban_user(self, user_id: int):
+        if not self.is_connected(): return False
+        result = await self.banned_users_collection.delete_one({"_id": user_id})
+        return result.deleted_count > 0
 
 db = DatabaseManager()
