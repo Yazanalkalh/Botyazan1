@@ -112,12 +112,11 @@ async def handle_user_message(message: types.Message):
             user_id=user.id,
             user_message_id=message.message_id
         )
-        await message.reply("""
-<b>تم الاستلام بنجاح!</b>  
-جزاك الله خيرًا على تواصلك. 🤲  
-نسأل الله أن يجعل ما أرسلته خالصًا لوجهه الكريم، وأن ينفع به الجميع.  
-إذا أردت إضافة أي ملاحظة أو استفسار آخر، فنحن هنا لنستمع إليك. 🌸
-""", parse_mode="HTML")
+        
+        # --- 💡 التعديل: نقرأ الآن رسالة التأكيد من قاعدة البيانات 💡 ---
+        confirmation_text = await db.get_text("user_message_received")
+        await message.reply(confirmation_text, parse_mode="HTML")
+
     except Exception as e:
         logger.error(f"فشل في معالجة الرسالة من المستخدم {user.id}: {e}")
         await message.reply("عذراً، حدث خطأ أثناء إرسال رسالتك.")
