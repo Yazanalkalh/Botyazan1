@@ -334,13 +334,13 @@ class DatabaseManager:
             return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
         
-    # --- 💡 تم إضافة كل الدوال الناقصة من التقرير هنا 💡 ---
+    # --- All missing functions from the report have been added here ---
     
     async def get_timezone(self) -> dict:
         if not self.is_connected(): return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
         doc = await self.settings_collection.find_one({"_id": "timezone"})
         if doc: return {"identifier": doc.get("identifier", "Asia/Riyadh"), "display_name": doc.get("display_name", "بتوقيت الرياض")}
-        return {"identifier": "Asia/Riyah", "display_name": "بتوقيت الرياض"}
+        return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
 
     async def set_timezone(self, identifier: str, display_name: str):
         if not self.is_connected(): return
@@ -403,7 +403,12 @@ class DatabaseManager:
             return True
         except ConnectionFailure: return False
         
-    # --- معالجة الاستدعاءات الخاطئة ---
+    async def delete_auto_publication_message(self):
+        if not self.is_connected(): return False
+        result = await self.settings_collection.delete_one({"_id": "auto_publication_message"})
+        return result.deleted_count > 0
+
+    # --- Handling incorrect calls for collections ---
     def users(self): return self.users_collection
     def texts(self): return self.texts_collection
     def reminders(self): return self.reminders_collection
@@ -413,6 +418,8 @@ class DatabaseManager:
     def publishing_channels(self): return self.publishing_channels_collection
     def library(self): return self.library_collection
     def scheduled_posts(self): return self.scheduled_posts_collection
-    # --- نهاية قسم المعالجة ---
+    def banned_users(self): return self.banned_users_collection
+    def auto_replies(self): return self.auto_replies_collection
+    def antiflood_violations(self): return self.antiflood_violations_collection
 
 db = DatabaseManager()
