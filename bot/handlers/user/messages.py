@@ -9,13 +9,11 @@ from bot.handlers.user.start import is_user_subscribed
 
 logger = logging.getLogger(__name__)
 
-# --- 💡 تم إصلاح هذه الدالة بالكامل 💡 ---
 async def send_reply_from_data(bot: Bot, chat_id: int, reply_data: dict):
     """
     يقوم بإعادة إرسال الرسالة المخزنة باستخدام الطريقة الصحيحة (copy_message).
     """
     try:
-        # نسترجع بيانات الرسالة الأصلية التي حفظها المدير
         message_info = reply_data.get('message', {})
         from_chat_id = message_info.get('chat', {}).get('id')
         message_id = message_info.get('message_id')
@@ -23,7 +21,6 @@ async def send_reply_from_data(bot: Bot, chat_id: int, reply_data: dict):
         if from_chat_id and message_id:
             await bot.copy_message(chat_id=chat_id, from_chat_id=from_chat_id, message_id=message_id)
         else:
-             # حل احتياطي في حال كانت البيانات محفوظة بشكل قديم (نص فقط)
             await bot.send_message(chat_id=chat_id, text=message_info.get('text', '...'))
 
     except Exception as e:
@@ -50,13 +47,10 @@ async def send_user_card_to_admin(user: types.User, bot: Bot):
     except Exception as e:
         logger.error(f"فشل إرسال بطاقة المستخدم: {e}")
 
-# --- 💡 تم إعادة بناء هذه الدالة بالكامل بالترتيب المنطقي الصحيح 💡 ---
+# --- 💡 تم إعادة بناء هذه الدالة بالكامل لتطبيق منطق السرعة القصوى 💡 ---
 async def handle_user_message(message: types.Message):
     """
-    يعالج أي رسالة من المستخدم بالترتيب الصحيح:
-    1. الرد التلقائي أولاً.
-    2. قواعد الحماية ثانياً.
-    3. إعادة التوجيه أخيراً.
+    يعالج رسائل المستخدم بمنطق "الصاروخ" (الأسرع أولاً).
     """
     user = message.from_user
     bot = message.bot
@@ -65,45 +59,42 @@ async def handle_user_message(message: types.Message):
     if user.id == ADMIN_USER_ID:
         return
 
-    # --- الخطوة 1: التحقق من الرد التلقائي (له الأولوية القصوى) ---
-    if message.text: # message.text يتحقق من وجود نص سواء كان لوحده أو مع وسائط
+    # --- الخطوة 1: التحقق من إعدادات الأمان (سريعة جدًا) ---
+    # نجلب الإعدادات مرة واحدة فقط ونعيد استخدامها
+    settings = await db.get_security_settings()
+    if settings.get("bot_status") == "inactive":
+        return # أسرع فحص، نتوقف هنا فورًا
+
+    # --- الخطوة 2: التحقق من الرد التلقائي (سريع) ---
+    if message.text:
         reply_data = await db.find_auto_reply_by_keyword(message.text)
         if reply_data:
             await send_reply_from_data(bot, message.chat.id, reply_data)
             return # وجدنا رداً، نتوقف هنا
 
-    # --- الخطوة 2: تطبيق قواعد الحماية والأمان ---
-    settings = await db.get_security_settings()
-
-    # التحقق من حالة البوت العامة
-    if settings.get("bot_status") == "inactive":
-        return # نتجاهل الرسالة تماماً
-
-    # التحقق من الوسائط الممنوعة
+    # --- الخطوة 3: التحقق من الوسائط الممنوعة (سريع) ---
     blocked_media = settings.get("blocked_media", {})
-    rejection_message = await db.get_text("security_rejection_message")
     
-    checks = {
-        "photo": message.photo and blocked_media.get("photo"),
-        "video": message.video and blocked_media.get("video"),
-        "sticker": message.sticker and blocked_media.get("sticker"),
-        "document": message.document and blocked_media.get("document"),
-        "audio": message.audio and blocked_media.get("audio"),
-        "voice": message.voice and blocked_media.get("voice"),
-        "link": (message.entities and any(e.type in ['url', 'text_link'] for e in message.entities)) and blocked_media.get("link"),
-    }
-    
-    if any(checks.values()):
+    # هذا الأسلوب أسرع من بناء قاموس في كل مرة
+    if (message.photo and blocked_media.get("photo")) or \
+       (message.video and blocked_media.get("video")) or \
+       (message.sticker and blocked_media.get("sticker")) or \
+       (message.document and blocked_media.get("document")) or \
+       (message.audio and blocked_media.get("audio")) or \
+       (message.voice and blocked_media.get("voice")) or \
+       ((message.entities and any(e.type in ['url', 'text_link'] for e in message.entities)) and blocked_media.get("link")):
+        
+        rejection_message = await db.get_text("security_rejection_message")
         try:
             await message.reply(rejection_message)
         except Exception: pass
         return # نرفض الرسالة ونتوقف هنا
         
-    # --- الخطوة 3: إذا مرت الرسالة، نطبق المنطق العادي ---
+    # --- الخطوة 4: التحقق من الاشتراك الإجباري (أبطأ عملية، نتركها للنهاية) ---
     if not await is_user_subscribed(user.id, bot):
-        return
+        return # إذا لم يكن مشتركًا، نتوقف هنا
 
-    # إعادة التوجيه للمدير
+    # --- الخطوة 5: إذا مرت الرسالة من كل شيء، يتم توجيهها للمدير ---
     try:
         await send_user_card_to_admin(user, bot)
         copied_message = await message.copy_to(ADMIN_USER_ID)
@@ -113,7 +104,6 @@ async def handle_user_message(message: types.Message):
             user_message_id=message.message_id
         )
         
-        # --- 💡 التعديل: نقرأ الآن رسالة التأكيد من قاعدة البيانات 💡 ---
         confirmation_text = await db.get_text("user_message_received")
         await message.reply(confirmation_text, parse_mode="HTML")
 
@@ -124,4 +114,5 @@ async def handle_user_message(message: types.Message):
 
 def register_messages_handler(dp: Dispatcher):
     """وظيفة التسجيل التلقائي لهذه الوحدة."""
+    # نجعل هذا المعالج هو الأخير ليتم فحصه، مما يعطي الأولوية للأوامر والمعالجات المحددة
     dp.register_message_handler(handle_user_message, content_types=types.ContentTypes.ANY)
