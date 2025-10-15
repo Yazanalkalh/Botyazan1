@@ -3,15 +3,12 @@
 import asyncio
 import logging
 import os
-import re # 💡 إضافة جديدة
-
+import re
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.mongo import MongoStorage
 from aiohttp import web
 
-# --- نستورد المتغيرات والمحركات الجديدة ---
 from bot.core.scheduler import scheduler, load_pending_jobs
-
 from config import TELEGRAM_TOKEN, MONGO_URI
 from bot.utils.loader import discover_handlers
 from bot.database.manager import db
@@ -24,15 +21,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-# --- 💡 دالة الفحص الذاتي الجديدة 💡 ---
 async def run_database_integrity_check():
     """
     يقوم بفحص سلامة ملف قاعدة البيانات عند بدء التشغيل لمنع أخطاء الدوال الناقصة.
-    سيطبع تقريراً في سجلات Render.
     """
     logger.info(" Gearing up for a database integrity check...")
     
-    # 1. الحصول على الدوال المعرّفة في manager.py
     defined_functions = set()
     manager_path = 'bot/database/manager.py'
     try:
@@ -47,7 +41,6 @@ async def run_database_integrity_check():
         logger.error(f" FATAL: Diagnostic check failed. Could not find '{manager_path}'")
         return False
 
-    # 2. الحصول على كل الدوال التي تم استدعاؤها في المشروع
     called_functions = set()
     pattern = re.compile(r'db\.(\w+)')
     project_directory = 'bot'
@@ -64,8 +57,16 @@ async def run_database_integrity_check():
                 except Exception:
                     pass
 
-    # 3. المقارنة وطباعة التقرير
-    missing_functions = called_functions - defined_functions
+    # --- 💡 بداية الإصلاح: قائمة الاستثناءات 💡 ---
+    # نخبر "حارس الأمن" أن يتجاهل هذه الدوال لأنها دوال خارجية وليست جزءاً من الكلاس
+    approved_external_calls = {'command'}
+    
+    # نزيل الدوال المستثناة من قائمة الفحص
+    functions_to_check = called_functions - approved_external_calls
+    # --- 💡 نهاية الإصلاح 💡 ---
+    
+    # نقارن القائمة المفلترة فقط
+    missing_functions = functions_to_check - defined_functions
     
     logger.info("--- Database Integrity Report ---")
     if not missing_functions:
@@ -78,12 +79,9 @@ async def run_database_integrity_check():
         logger.info("--- End of Report ---")
         return False
 
-
-# --- دالة لتشغيل البوت ---
 async def start_bot():
     """يقوم بإعداد وتشغيل البوت بالترتيب الصحيح للمعالجات."""
     
-    # --- 💡 تشغيل الفحص أولاً 💡 ---
     is_ok = await run_database_integrity_check()
     if not is_ok:
         logger.critical(" Shutting down due to critical errors found during integrity check.")
@@ -93,7 +91,6 @@ async def start_bot():
     storage = MongoStorage(uri=MONGO_URI, db_name="aiogram_fsm")
     dp = Dispatcher(bot, storage=storage)
 
-    # --- ربط الفلاتر والوسائط بالبوت ---
     dp.filters_factory.bind(IsAdminFilter)
     dp.middleware.setup(BanMiddleware())
     dp.middleware.setup(AntiFloodMiddleware())
@@ -127,7 +124,6 @@ async def start_bot():
     logger.info("✅ البوت جاهز للعمل وينتظر الرسائل...")
     await dp.start_polling()
 
-# --- (بقية الملف كما هو) ---
 async def handle_root(request):
     return web.Response(text="Bot is alive and running!")
 
