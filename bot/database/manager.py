@@ -138,26 +138,19 @@ class DatabaseManager:
             {"_id": "antiflood_settings"}, {"$set": {key: value}}, upsert=True
         )
 
-    # --- 💡 تم إصلاح هذه الدالة بالكامل لتصبح أذكى 💡 ---
     async def record_antiflood_violation(self, user_id: int, reset_after_hours: int = 1):
-        """
-        يسجل مخالفة للمستخدم ويقوم بإعادة تعيين العداد تلقائياً إذا كانت المخالفة السابقة قديمة.
-        """
         if not self.is_connected(): return
-
-        doc = await self.antiflood_violations_collection.find_one({"user_id": user_id})
         now = datetime.utcnow()
         time_threshold = now - timedelta(hours=reset_after_hours)
-
-        if not doc or doc.get("last_violation") < time_threshold:
-            # إذا لم يكن هناك سجل، أو كان السجل قديماً، نبدأ العد من 1
+        doc = await self.antiflood_violations_collection.find_one({"user_id": user_id})
+        last_violation_time = doc.get("last_violation") if doc else None
+        if not last_violation_time or last_violation_time < time_threshold:
             await self.antiflood_violations_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"count": 1, "last_violation": now}},
                 upsert=True
             )
         else:
-            # إذا كان السجل حديثاً، نزيد العداد فقط
             await self.antiflood_violations_collection.update_one(
                 {"user_id": user_id},
                 {"$inc": {"count": 1}, "$set": {"last_violation": now}},
@@ -415,6 +408,7 @@ class DatabaseManager:
         result = await self.settings_collection.delete_one({"_id": "auto_publication_message"})
         return result.deleted_count > 0
 
+    # These are for compatibility with the integrity checker
     def users(self): return self.users_collection
     def texts(self): return self.texts_collection
     def reminders(self): return self.reminders_collection
