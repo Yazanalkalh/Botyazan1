@@ -8,7 +8,7 @@ from aiogram.utils.callback_data import CallbackData
 
 from bot.database.manager import db
 
-# --- 💡 القاموس الذكي لترجمة الأسماء البرمجية 💡 ---
+# --- 💡 القاموس الذكي لترجمة الأسماء البرمجية (النسخة الكاملة) 💡 ---
 TEXT_ID_DESCRIPTIONS = {
     # --- الواجهة العامة والبدء ---
     "admin_panel_title": "عنوان لوحة التحكم الرئيسية",
@@ -21,8 +21,6 @@ TEXT_ID_DESCRIPTIONS = {
     "ar_next_button": "زر 'التالي'",
     "ar_prev_button": "زر 'السابق'",
     "ar_delete_button": "زر 'حذف' العام",
-    
-    # --- 💡 الإضافة الجديدة: وصف نص رسالة التأكيد 💡 ---
     "user_message_received": "رسالة تأكيد استلام رسالة المستخدم",
 
     # --- الردود التلقائية ---
@@ -58,38 +56,92 @@ TEXT_ID_DESCRIPTIONS = {
     "cp_set_auto_msg_button": "زر 'تعيين رسالة النشر'",
     "cp_view_auto_msg_button": "زر 'عرض رسالة النشر'",
     "cp_publish_now_button": "زر 'نشر الآن'",
+    "cp_schedule_button": "زر 'جدولة منشور'",
+    "cp_view_scheduled_button": "زر 'عرض المجدولة'",
+    "cp_ask_for_auto_msg": "رسالة طلب محتوى النشر التلقائي",
+    "cp_auto_msg_set_success": "رسالة نجاح تعيين النشر التلقائي",
+    "cp_no_auto_msg": "رسالة 'لا يوجد منشور تلقائي'",
+    "cp_auto_msg_deleted_success": "رسالة نجاح حذف المنشور التلقائي",
+    "cp_publish_started": "رسالة 'بدء النشر الآن'",
+    "cp_publish_finished": "رسالة 'اكتمال النشر الآن'",
+    "cp_error_no_auto_msg_to_publish": "خطأ: لا يوجد منشور لنشره",
+    "cp_error_no_channels_to_publish": "خطأ: لا توجد قنوات للنشر",
 
     # --- إدارة القنوات ---
     "cm_menu_title": "عنوان قائمة 'إدارة القنوات'",
     "cm_add_button": "زر 'إضافة قناة'",
     "cm_view_button": "زر 'عرض القنوات'",
+    "cm_ask_for_channel_id": "رسالة طلب معرّف القناة",
+    "cm_add_success": "رسالة نجاح إضافة القناة",
+    "cm_add_fail_not_admin": "خطأ: البوت ليس مشرفاً",
+    "cm_add_fail_invalid_id": "خطأ: معرّف القناة غير صالح",
+    "cm_add_fail_already_exists": "خطأ: القناة مضافة بالفعل",
+    "cm_no_channels": "رسالة 'لا توجد قنوات'",
+    "cm_deleted_success": "رسالة نجاح حذف القناة",
+    "cm_test_button": "زر 'تجربة الإرسال للقناة'",
+    "cm_test_success": "رسالة نجاح تجربة الإرسال",
+    "cm_test_fail": "رسالة فشل تجربة الإرسال",
 
     # --- إدارة الحظر ---
     "bm_menu_title": "عنوان قائمة 'إدارة الحظر'",
     "bm_ban_button": "زر 'حظر مستخدم'",
     "bm_unban_button": "زر 'إلغاء حظر'",
-
-    # --- نشر للجميع ---
-    "bc_ask_for_message": "رسالة طلب محتوى 'النشر للجميع'",
-
-    # --- تخصيص الواجهة ---
-    "ui_menu_title": "عنوان قائمة 'تخصيص الواجهة'",
+    "bm_view_button": "زر 'عرض المحظورين'",
+    "bm_ask_for_user_id": "رسالة طلب ID للحظر",
+    "bm_ask_for_unban_user_id": "رسالة طلب ID لإلغاء الحظر",
+    "bm_user_banned_success": "رسالة نجاح حظر المستخدم",
+    "bm_user_already_banned": "خطأ: المستخدم محظور بالفعل",
+    "bm_user_unbanned_success": "رسالة نجاح إلغاء الحظر",
+    "bm_user_not_banned": "خطأ: المستخدم ليس محظوراً",
+    "bm_invalid_user_id": "خطأ: ID المستخدم غير صالح",
+    "bm_no_banned_users": "رسالة 'لا يوجد محظورين'",
 
     # --- الحماية والأمان ---
     "sec_menu_title": "عنوان قائمة 'الحماية والأمان'",
+    "sec_bot_status_button": "زر 'حالة البوت'",
+    "sec_media_filtering_button": "زر 'منع الوسائط'",
+    "sec_antiflood_button": "زر 'منع التكرار'",
+    "sec_rejection_message_button": "زر 'تعديل رسالة الرفض'",
+    "sec_bot_active": "نص 'يعمل' (حالة البوت)",
+    "sec_bot_inactive": "نص 'متوقف' (حالة البوت)",
     "security_rejection_message": "رسالة رفض الوسائط الممنوعة",
 
-    # --- بقية الأقسام ---
-    "mm_menu_title": "عنوان قائمة 'إدارة الذاكرة'",
+    # --- جدولة المنشورات ---
+    "sch_ask_for_message": "رسالة طلب محتوى المنشور المجدول",
+    "sch_ask_for_channels": "رسالة طلب اختيار قنوات الجدولة",
+    "sch_all_channels_button": "زر 'كل القنوات' (للجدولة)",
+    "sch_ask_for_datetime": "رسالة طلب تاريخ ووقت الجدولة",
+    "sch_invalid_datetime": "خطأ: صيغة التاريخ غير صالحة",
+    "sch_datetime_in_past": "خطأ: لا يمكن الجدولة في الماضي",
+    "sch_add_success": "رسالة نجاح إضافة الجدولة",
+    "sch_no_jobs": "رسالة 'لا توجد منشورات مجدولة'",
+    "sch_deleted_success": "رسالة نجاح حذف الجدولة",
+
+    # --- منع التكرار (بروتوكول سيربيروس) ---
+    "af_menu_title": "عنوان قائمة 'منع التكرار'",
+    "af_status_button": "زر 'حالة البروتوكول'",
+    "af_enabled": "نص 'مفعل' (لمنع التكرار)",
+    "af_disabled": "نص 'معطل' (لمنع التكرار)",
+    "af_edit_threshold_button": "زر 'تعديل عتبة الإزعاج'",
+    "af_edit_mute_duration_button": "زر 'تعديل مدة التقييد'",
+    "af_ask_for_new_value": "رسالة طلب إدخال قيمة جديدة",
+    "af_updated_success": "رسالة نجاح تحديث الإعداد",
+    "af_mute_notification": "رسالة إشعار المستخدم بالتقييد المؤقت",
+    "af_ban_notification": "رسالة إشعار المستخدم بالحظر الدائم",
+
+    # --- الإحصائيات ---
     "stats_title": "عنوان قائمة 'الإحصائيات'",
-    "lib_menu_title": "عنوان قائمة 'المكتبة'",
-    "fs_menu_title": "عنوان قائمة 'الاشتراك الإجباري'",
-    "sm_title": "عنوان قائمة 'مراقبة النظام'",
+    "stats_total_users": "نص 'إجمالي المستخدمين'",
+    "stats_banned_users": "نص 'المستخدمون المحظورون'",
+    "stats_auto_replies": "نص 'الردود التلقائية'",
+    "stats_reminders": "نص 'التذكيرات'",
+    "stats_refresh_button": "زر 'تحديث' (للإحصائيات)",
+    
+    # --- العناوين المتبقية ---
     "te_menu_title": "عنوان قائمة 'محرر النصوص'",
 }
 
 
-# --- (بقية الكود يبقى كما هو دون أي تغيير) ---
 class EditSingleText(StatesGroup):
     waiting_for_new_text = State()
 
@@ -101,7 +153,7 @@ async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback
     await state.finish()
     page = int(callback_data.get("page", 1)) if callback_data else 1
     
-    TEXTS_PER_PAGE = 10
+    TEXTS_PER_PAGE = 15 # تم زيادة العدد لعرض المزيد من الخيارات في الصفحة الواحدة
     all_texts_ids = await db.get_all_editable_texts()
     
     if not all_texts_ids:
@@ -117,7 +169,8 @@ async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback
     
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     for text_id in texts_to_show:
-        display_name = TEXT_ID_DESCRIPTIONS.get(text_id, text_id)
+        # إذا لم نجد ترجمة، نعرض الاسم البرمجي كما هو
+        display_name = TEXT_ID_DESCRIPTIONS.get(text_id, f"{text_id} (لا يوجد وصف)")
         keyboard.add(types.InlineKeyboardButton(
             text=f"✍️ {display_name}",
             callback_data=te_edit_cb.new(id=text_id)
@@ -129,10 +182,13 @@ async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback
     if page < total_pages:
         pagination_buttons.append(types.InlineKeyboardButton(text=await db.get_text("ar_next_button"), callback_data=te_pagination_cb.new(page=page + 1)))
     
-    keyboard.row(*pagination_buttons)
+    if pagination_buttons:
+        keyboard.row(*pagination_buttons)
+        
     keyboard.add(types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:panel:back"))
     
-    await call.message.edit_text(f"{(await db.get_text('te_menu_title'))}\n\n({page_info})", reply_markup=keyboard, parse_mode="Markdown")
+    menu_title = await db.get_text('te_menu_title')
+    await call.message.edit_text(f"{menu_title}\n\n({page_info})", reply_markup=keyboard, parse_mode="Markdown")
     await call.answer()
 
 async def edit_text_start(call: types.CallbackQuery, state: FSMContext, callback_data: dict):
