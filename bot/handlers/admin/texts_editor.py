@@ -9,18 +9,27 @@ from aiogram.utils.callback_data import CallbackData
 from bot.database.manager import db
 
 # --- 💡 القاموس الذكي لترجمة الأسماء البرمجية 💡 ---
-# هذا القاموس يربط كل اسم برمجي بوصف عربي سهل الفهم
 TEXT_ID_DESCRIPTIONS = {
+    # --- الواجهة العامة والبدء ---
     "admin_panel_title": "عنوان لوحة التحكم الرئيسية",
     "welcome_message": "رسالة الترحيب (/start)",
-    "date_button": "نص زر 'التاريخ'",
-    "time_button": "نص زر 'الساعة'",
-    "reminder_button": "نص زر 'الأذكار'",
+    "date_button": "نص زر 'التاريخ' الرئيسي",
+    "time_button": "نص زر 'الساعة' الرئيسي",
+    "reminder_button": "نص زر 'الأذكار' الرئيسي",
+    "ar_back_button": "زر 'عودة' العام",
+    "ar_page_info": "نص معلومات الصفحة (مثال: صفحة 1/5)",
+    "ar_next_button": "زر 'التالي'",
+    "ar_prev_button": "زر 'السابق'",
+    "ar_delete_button": "زر 'حذف' العام",
+    
+    # --- 💡 الإضافة الجديدة: وصف نص رسالة التأكيد 💡 ---
+    "user_message_received": "رسالة تأكيد استلام رسالة المستخدم",
+
+    # --- الردود التلقائية ---
     "ar_menu_title": "عنوان قائمة 'الردود التلقائية'",
     "ar_add_button": "زر 'إضافة رد جديد'",
     "ar_view_button": "زر 'عرض كل الردود'",
     "ar_import_button": "زر 'استيراد من ملف' (للردود)",
-    "ar_back_button": "زر 'عودة' العام",
     "ar_ask_for_keyword": "رسالة طلب الكلمة المفتاحية",
     "ar_ask_for_content": "رسالة طلب محتوى الرد",
     "ar_added_success": "رسالة نجاح إضافة الرد",
@@ -29,10 +38,8 @@ TEXT_ID_DESCRIPTIONS = {
     "ar_import_success": "رسالة نجاح الاستيراد (للردود)",
     "ar_no_replies": "رسالة 'لا توجد ردود'",
     "ar_deleted_success": "رسالة نجاح الحذف (للردود)",
-    "ar_page_info": "نص معلومات الصفحة (مثال: صفحة 1/5)",
-    "ar_next_button": "زر 'التالي'",
-    "ar_prev_button": "زر 'السابق'",
-    "ar_delete_button": "زر 'حذف' العام",
+    
+    # --- التذكيرات ---
     "rem_menu_title": "عنوان قائمة 'التذكيرات'",
     "rem_add_button": "زر 'إضافة تذكير'",
     "rem_view_button": "زر 'عرض التذكيرات'",
@@ -45,38 +52,50 @@ TEXT_ID_DESCRIPTIONS = {
     "rem_no_reminders": "رسالة 'لا توجد تذكيرات'",
     "rem_deleted_success": "رسالة نجاح الحذف (للتذكيرات)",
     "rem_delete_button": "زر 'حذف' (للتذكيرات)",
+
+    # --- منشورات القناة ---
     "cp_menu_title": "عنوان قائمة 'منشورات القناة'",
     "cp_set_auto_msg_button": "زر 'تعيين رسالة النشر'",
     "cp_view_auto_msg_button": "زر 'عرض رسالة النشر'",
     "cp_publish_now_button": "زر 'نشر الآن'",
+
+    # --- إدارة القنوات ---
     "cm_menu_title": "عنوان قائمة 'إدارة القنوات'",
     "cm_add_button": "زر 'إضافة قناة'",
     "cm_view_button": "زر 'عرض القنوات'",
+
+    # --- إدارة الحظر ---
     "bm_menu_title": "عنوان قائمة 'إدارة الحظر'",
     "bm_ban_button": "زر 'حظر مستخدم'",
     "bm_unban_button": "زر 'إلغاء حظر'",
+
+    # --- نشر للجميع ---
     "bc_ask_for_message": "رسالة طلب محتوى 'النشر للجميع'",
+
+    # --- تخصيص الواجهة ---
     "ui_menu_title": "عنوان قائمة 'تخصيص الواجهة'",
+
+    # --- الحماية والأمان ---
     "sec_menu_title": "عنوان قائمة 'الحماية والأمان'",
     "security_rejection_message": "رسالة رفض الوسائط الممنوعة",
+
+    # --- بقية الأقسام ---
     "mm_menu_title": "عنوان قائمة 'إدارة الذاكرة'",
     "stats_title": "عنوان قائمة 'الإحصائيات'",
     "lib_menu_title": "عنوان قائمة 'المكتبة'",
     "fs_menu_title": "عنوان قائمة 'الاشتراك الإجباري'",
     "sm_title": "عنوان قائمة 'مراقبة النظام'",
-    # يمكنك إضافة المزيد من الترجمات هنا لأي نص جديد
+    "te_menu_title": "عنوان قائمة 'محرر النصوص'",
 }
 
 
-# --- FSM States ---
+# --- (بقية الكود يبقى كما هو دون أي تغيير) ---
 class EditSingleText(StatesGroup):
     waiting_for_new_text = State()
 
-# --- CallbackData ---
 te_pagination_cb = CallbackData("te_page", "page")
 te_edit_cb = CallbackData("te_edit", "id")
 
-# --- 1. Main Menu for Text Editor (النسخة المحسّنة) ---
 async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback_data: dict = None):
     """يعرض قائمة بالنصوص القابلة للتعديل مع أوصاف عربية."""
     await state.finish()
@@ -98,11 +117,9 @@ async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback
     
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     for text_id in texts_to_show:
-        # --- 💡 التحسين: نستخدم القاموس للحصول على الوصف العربي 💡 ---
         display_name = TEXT_ID_DESCRIPTIONS.get(text_id, text_id)
         keyboard.add(types.InlineKeyboardButton(
             text=f"✍️ {display_name}",
-            # يبقى الاسم البرمجي في الـ callback_data
             callback_data=te_edit_cb.new(id=text_id)
         ))
 
@@ -118,14 +135,12 @@ async def show_texts_menu(call: types.CallbackQuery, state: FSMContext, callback
     await call.message.edit_text(f"{(await db.get_text('te_menu_title'))}\n\n({page_info})", reply_markup=keyboard, parse_mode="Markdown")
     await call.answer()
 
-# --- 2. Edit Single Text Flow (النسخة المحسّنة) ---
 async def edit_text_start(call: types.CallbackQuery, state: FSMContext, callback_data: dict):
     """يبدأ عملية تعديل نص معين."""
     text_id = callback_data['id']
     await state.update_data(text_id_to_edit=text_id)
     
     current_text = await db.get_text(text_id)
-    # --- 💡 التحسين: نعرض الوصف العربي للمدير 💡 ---
     display_name = TEXT_ID_DESCRIPTIONS.get(text_id, text_id)
     
     prompt_text = (await db.get_text("te_ask_for_new_text"))
@@ -150,7 +165,6 @@ async def new_text_received(message: types.Message, state: FSMContext):
     await message.answer(text, reply_markup=keyboard)
 
 
-# --- Registration Function ---
 def register_texts_editor_handlers(dp: Dispatcher):
     """يسجل كل معالجات محرر النصوص."""
     dp.register_callback_query_handler(show_texts_menu, text="admin:texts_editor", is_admin=True, state="*")
