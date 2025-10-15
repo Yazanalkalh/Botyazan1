@@ -50,6 +50,7 @@ class DatabaseManager:
             return False
 
     async def initialize_defaults(self):
+        # This function contains all default UI texts and settings
         if not self.is_connected(): return
         defaults = {
             "admin_panel_title": "أهلاً بك في لوحة التحكم.", "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم",
@@ -70,6 +71,7 @@ class DatabaseManager:
         await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": {"bot_status": "active", "blocked_media": {}}}, upsert=True)
         await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$setOnInsert": {"enabled": True}}, upsert=True)
         await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$setOnInsert": {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}}, upsert=True)
+        await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
 
     # --- Cache and Text Management ---
     async def load_texts_into_cache(self):
@@ -117,6 +119,15 @@ class DatabaseManager:
     async def get_banned_users_count(self):
         if not self.is_connected(): return 0
         return await self.banned_users_collection.count_documents({})
+        
+    async def get_all_users(self):
+        if not self.is_connected(): return []
+        all_users_cursor = self.users_collection.find({}, {"_id": 1})
+        all_user_ids = {user['_id'] for user in await all_users_cursor.to_list(length=None)}
+        banned_users_cursor = self.banned_users_collection.find({}, {"_id": 1})
+        banned_user_ids = {user['_id'] for user in await banned_users_cursor.to_list(length=None)}
+        active_user_ids = all_user_ids - banned_user_ids
+        return list(active_user_ids)
 
     # --- Anti-Flood (Cerberus) Protocol ---
     async def get_antiflood_settings(self):
@@ -322,5 +333,86 @@ class DatabaseManager:
         async for doc in self.reminders_collection.aggregate(pipeline): 
             return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
+        
+    # --- 💡 تم إضافة كل الدوال الناقصة من التقرير هنا 💡 ---
+    
+    async def get_timezone(self) -> dict:
+        if not self.is_connected(): return {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
+        doc = await self.settings_collection.find_one({"_id": "timezone"})
+        if doc: return {"identifier": doc.get("identifier", "Asia/Riyadh"), "display_name": doc.get("display_name", "بتوقيت الرياض")}
+        return {"identifier": "Asia/Riyah", "display_name": "بتوقيت الرياض"}
+
+    async def set_timezone(self, identifier: str, display_name: str):
+        if not self.is_connected(): return
+        await self.settings_collection.update_one({"_id": "timezone"}, {"$set": {"identifier": identifier, "display_name": display_name}}, upsert=True)
+
+    async def toggle_media_blocking(self, media_type: str):
+        if not self.is_connected(): return
+        valid_keys = ["photo", "video", "link", "sticker", "document", "audio", "voice"]
+        if media_type not in valid_keys: return None
+        current_settings = await self.get_security_settings()
+        current_blocked_media = current_settings.get("blocked_media", {})
+        is_currently_blocked = current_blocked_media.get(media_type, False)
+        await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {f"blocked_media.{media_type}": not is_currently_blocked}}, upsert=True)
+        return not is_currently_blocked
+
+    async def toggle_force_subscribe_status(self):
+        if not self.is_connected(): return
+        current_status = await self.get_force_subscribe_status()
+        await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$set": {"enabled": not current_status}}, upsert=True)
+        return not current_status
+        
+    async def add_subscription_channel(self, channel_id: int, channel_title: str, username: str):
+        if not self.is_connected(): return
+        await self.subscription_channels_collection.update_one({"channel_id": channel_id}, {"$set": {"title": channel_title, "username": username}}, upsert=True)
+
+    async def get_all_subscription_channels_docs(self):
+        if not self.is_connected(): return []
+        return await self.subscription_channels_collection.find().to_list(length=None)
+
+    async def delete_subscription_channel(self, db_id: str):
+        if not self.is_connected(): return False
+        try:
+            result = await self.subscription_channels_collection.delete_one({"_id": ObjectId(db_id)})
+            return result.deleted_count > 0
+        except Exception: return False
+        
+    async def add_to_library(self, message: dict):
+        if not self.is_connected(): return
+        await self.library_collection.insert_one({"message": message, "added_date": datetime.utcnow()})
+
+    async def get_library_items(self, page: int = 1, limit: int = 5):
+        if not self.is_connected(): return []
+        return await self.library_collection.find().sort("added_date", -1).skip((page-1)*limit).limit(limit).to_list(length=limit)
+
+    async def get_library_items_count(self):
+        if not self.is_connected(): return 0
+        return await self.library_collection.count_documents({})
+
+    async def delete_library_item(self, item_id: str):
+        if not self.is_connected(): return False
+        try:
+            result = await self.library_collection.delete_one({"_id": ObjectId(item_id)})
+            return result.deleted_count > 0
+        except Exception: return False
+
+    async def ping_database(self) -> bool:
+        if not self.client: return False
+        try:
+            await self.client.admin.command("ping")
+            return True
+        except ConnectionFailure: return False
+        
+    # --- معالجة الاستدعاءات الخاطئة ---
+    def users(self): return self.users_collection
+    def texts(self): return self.texts_collection
+    def reminders(self): return self.reminders_collection
+    def settings(self): return self.settings_collection
+    def subscription_channels(self): return self.subscription_channels_collection
+    def message_links(self): return self.forwarding_map_collection
+    def publishing_channels(self): return self.publishing_channels_collection
+    def library(self): return self.library_collection
+    def scheduled_posts(self): return self.scheduled_posts_collection
+    # --- نهاية قسم المعالجة ---
 
 db = DatabaseManager()
