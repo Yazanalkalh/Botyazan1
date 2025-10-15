@@ -4,7 +4,7 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
 from bson.objectid import ObjectId
-from datetime import datetime, timedelta # <-- 💡 تم تعديل هذا السطر
+from datetime import datetime, timedelta
 import asyncio
 
 from bot.core.cache import TEXTS_CACHE
@@ -40,7 +40,6 @@ class DatabaseManager:
             self.antiflood_violations_collection = self.db.antiflood_violations
             
             await self.initialize_defaults()
-            # الآن هذا السطر سيعمل لأن الدالة موجودة بالأسفل
             await self.load_texts_into_cache()
 
             logger.info("✅ تم الاتصال بقاعدة بيانات MongoDB بنجاح.")
@@ -51,6 +50,7 @@ class DatabaseManager:
 
     async def initialize_defaults(self):
         if not self.is_connected(): return
+        # A comprehensive list of default texts
         defaults = {
             "admin_panel_title": "أهلاً بك في لوحة التحكم.", "welcome_message": "أهلاً بك يا #name_user!", "date_button": "📅 التاريخ", "time_button": "⏰ الساعة الآن", "reminder_button": "📿 أذكار اليوم", "user_message_received": "✅ تم استلام رسالتك بنجاح، سيتم الرد عليك قريباً.",
             "ar_menu_title": "⚙️ *إدارة الردود التلقائية*", "ar_add_button": "➕ إضافة رد", "ar_view_button": "📖 عرض الردود", "ar_import_button": "📥 استيراد", "ar_back_button": "⬅️ عودة", "ar_ask_for_keyword": "📝 أرسل *الكلمة المفتاحية*", "ar_ask_for_content": "📝 أرسل *محتوى الرد*", "ar_added_success": "✅ تم الحفظ!", "ar_add_another_button": "➕ إضافة المزيد", "ar_ask_for_file": "📦 أرسل ملف `.txt`.", "ar_import_success": "✅ اكتمل.", "ar_no_replies": "لا توجد ردود.", "ar_deleted_success": "🗑️ تم الحذف.", "ar_page_info": "صفحة {current_page}/{total_pages}", "ar_next_button": "التالي ⬅️", "ar_prev_button": "➡️ السابق", "ar_delete_button": "🗑️ حذف",
@@ -69,20 +69,11 @@ class DatabaseManager:
         default_security = {"bot_status": "active", "blocked_media": {}}
         await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": default_security}, upsert=True)
         await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$setOnInsert": {"enabled": True}}, upsert=True)
-        default_antiflood = {
-            "enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30
-        }
+        default_antiflood = {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}
         await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$setOnInsert": default_antiflood}, upsert=True)
 
-    # --- 💡 هذه هي الدالة المفقودة التي تم إضافتها لحل المشكلة 💡 ---
     async def load_texts_into_cache(self):
-        """
-        Loads all texts from the database into the global cache for faster access.
-        """
-        if not self.is_connected():
-            logger.warning("Cannot load texts into cache, database not connected.")
-            return
-        
+        if not self.is_connected(): return
         try:
             TEXTS_CACHE.clear()
             cursor = self.texts_collection.find({})
@@ -93,16 +84,9 @@ class DatabaseManager:
             logger.error(f"❌ فشل تحميل النصوص في الذاكرة المؤقتة: {e}")
 
     async def get_text(self, text_id: str) -> str:
-        cached_text = TEXTS_CACHE.get(text_id)
-        if cached_text:
-            return cached_text
-        if not self.is_connected(): return f"[{text_id}]"
-        doc = await self.texts_collection.find_one({"_id": text_id})
-        text = doc.get("text", f"[{text_id}]") if doc else f"[{text_id}]"
-        TEXTS_CACHE[text_id] = text
-        return text
+        return TEXTS_CACHE.get(text_id, f"[{text_id}]")
         
-    # --- وظائف بروتوكول سيربيروس ---
+    # --- Anti-Flood (Cerberus) Protocol Functions ---
     async def get_antiflood_settings(self):
         if not self.is_connected(): return {}
         doc = await self.settings_collection.find_one({"_id": "antiflood_settings"})
@@ -111,8 +95,7 @@ class DatabaseManager:
     async def update_antiflood_setting(self, key: str, value):
         if not self.is_connected(): return
         valid_keys = ["enabled", "rate_limit", "time_window", "mute_duration"]
-        if key not in valid_keys:
-            return
+        if key not in valid_keys: return
         await self.settings_collection.update_one(
             {"_id": "antiflood_settings"},
             {"$set": {key: value}},
@@ -121,27 +104,73 @@ class DatabaseManager:
 
     async def record_antiflood_violation(self, user_id: int):
         if not self.is_connected(): return
-        # Note: We use "user_id" as a field, not the document's _id
         await self.antiflood_violations_collection.update_one(
             {"user_id": user_id},
             {"$inc": {"count": 1}, "$set": {"last_violation": datetime.utcnow()}},
             upsert=True
         )
 
-    # --- 💡 تم إصلاح هذه الدالة لتعمل بشكل صحيح مع نظام الحماية 💡 ---
     async def get_user_violation_count(self, user_id: int, within_hours: int = 1) -> int:
         if not self.is_connected(): return 0
-        
         time_threshold = datetime.utcnow() - timedelta(hours=within_hours)
-        
         doc = await self.antiflood_violations_collection.find_one({
             "user_id": user_id,
             "last_violation": {"$gte": time_threshold}
         })
-        
         return doc.get("count", 0) if doc else 0
 
-    # --- وظائف مساعدة أخرى ---
+    # --- 💡 تم إضافة هذا القسم بالكامل لحل المشكلة 💡 ---
+    # --- Scheduled Posts Functions ---
+    async def add_scheduled_post(self, job_id: str, message_data: dict, target_channels: list, run_date: datetime):
+        """Adds a new scheduled post to the database."""
+        if not self.is_connected(): return
+        await self.scheduled_posts_collection.insert_one({
+            "_id": job_id,
+            "message_data": message_data,
+            "target_channels": target_channels,
+            "run_date": run_date,
+            "is_sent": False
+        })
+
+    async def delete_scheduled_post(self, job_id: str):
+        """Deletes a scheduled post from the database by its job_id."""
+        if not self.is_connected(): return
+        await self.scheduled_posts_collection.delete_one({"_id": job_id})
+
+    async def get_scheduled_posts_count(self) -> int:
+        """Counts all scheduled posts."""
+        if not self.is_connected(): return 0
+        return await self.scheduled_posts_collection.count_documents({})
+
+    async def get_scheduled_posts(self, page: int = 1, limit: int = 5) -> list:
+        """Retrieves scheduled posts with pagination."""
+        if not self.is_connected(): return []
+        skip = (page - 1) * limit
+        cursor = self.scheduled_posts_collection.find({}).skip(skip).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    async def get_all_pending_scheduled_posts(self) -> list:
+        """
+        Retrieves all posts that have not been sent and are scheduled for the future.
+        This is used on bot startup to reload jobs.
+        """
+        if not self.is_connected(): return []
+        cursor = self.scheduled_posts_collection.find({
+            "is_sent": False,
+            "run_date": {"$gte": datetime.utcnow()}
+        })
+        return await cursor.to_list(length=None) # length=None fetches all matching documents
+    
+    async def mark_scheduled_post_as_sent(self, job_id: str):
+        """Marks a scheduled post as sent after successful execution."""
+        if not self.is_connected(): return
+        await self.scheduled_posts_collection.update_one(
+            {"_id": job_id},
+            {"$set": {"is_sent": True}}
+        )
+    # --- نهاية القسم المضاف ---
+
+    # --- Other Helper Functions ---
     async def get_security_settings(self):
         if not self.is_connected():
             return {"bot_status": "active", "blocked_media": {}}
@@ -151,7 +180,7 @@ class DatabaseManager:
     async def ban_user(self, user_id: int) -> bool:
         if not self.is_connected(): return False
         if await self.banned_users_collection.find_one({"_id": user_id}):
-            return False  # Already banned
+            return False
         await self.banned_users_collection.insert_one({"_id": user_id, "ban_date": datetime.utcnow()})
         return True
 
@@ -163,7 +192,7 @@ class DatabaseManager:
     async def add_user(self, user) -> bool:
         if not self.is_connected(): return False
         if await self.users_collection.find_one({"_id": user.id}):
-            return False # User already exists
+            return False
         await self.users_collection.insert_one({
             "_id": user.id,
             "first_name": user.first_name,
@@ -172,7 +201,5 @@ class DatabaseManager:
             "join_date": datetime.utcnow()
         })
         return True
-    
-    # ... (يمكن إضافة المزيد من الدوال هنا حسب الحاجة)
 
 db = DatabaseManager()
