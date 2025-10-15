@@ -2,10 +2,11 @@
 
 import datetime
 import time
+import os
+import psutil
 from aiogram import types, Dispatcher
 
 from bot.database.manager import db
-# --- 💡 التعديل: نستورد الآن من الملف المركزي الجديد لكسر الحلقة المفرغة 💡 ---
 from bot.core.bot_data import START_TIME
 
 def format_uptime(duration: datetime.timedelta) -> str:
@@ -19,20 +20,19 @@ def format_uptime(duration: datetime.timedelta) -> str:
         parts.append(f"{days} يوم")
     if hours > 0:
         parts.append(f"{hours} ساعة")
-    if minutes > 0 or not parts: # عرض الدقائق دائماً إذا كانت المدة أقل من ساعة
+    if minutes > 0 or not parts:
         parts.append(f"{minutes} دقيقة")
     
     return " و ".join(parts) if parts else "أقل من دقيقة"
 
 async def show_system_status(call: types.CallbackQuery):
     """
-    يجمع معلومات حيوية عن حالة البوت ويعرضها.
+    يجمع معلومات حيوية ومتقدمة عن حالة البوت والخادم ويعرضها.
     """
     await call.answer("جاري فحص الأنظمة...")
 
     # --- 1. فحص المؤشرات الحيوية ---
     bot_status_text = await db.get_text("sm_status_operational")
-    
     db_ok = await db.ping_database()
     db_status_text = await db.get_text("sm_status_connected") if db_ok else await db.get_text("sm_status_unreachable")
     
@@ -45,10 +45,18 @@ async def show_system_status(call: types.CallbackQuery):
     latency_ms = (time.time() - start_ping_time) * 1000
     latency_str = f"{int(latency_ms)} ميلي ثانية"
     
+    # --- 💡 بداية الإضافة: قياس أداء الخادم 💡 ---
+    cpu_usage = psutil.cpu_percent()
+    ram_info = psutil.virtual_memory()
+    ram_usage_percent = ram_info.percent
+    process = psutil.Process(os.getpid())
+    ram_usage_mb = process.memory_info().rss / (1024 * 1024)
+    # --- 💡 نهاية الإضافة 💡 ---
+
     # --- 3. معلومات النشر ---
     last_update_str = START_TIME.strftime("%Y/%m/%d - %I:%M %p").replace("AM", "صباحاً").replace("PM", "مساءً")
 
-    # --- 4. تجميع الرسالة ---
+    # --- 4. تجميع الرسالة (مع القسم الجديد) ---
     title = await db.get_text("sm_title")
     overall_status = await db.get_text("sm_status_ok") if db_ok else await db.get_text("sm_status_degraded")
 
@@ -61,6 +69,10 @@ async def show_system_status(call: types.CallbackQuery):
         f"**{(await db.get_text('sm_performance'))}:**\n"
         f"  - {(await db.get_text('sm_uptime'))}: `{uptime_str}`\n"
         f"  - {(await db.get_text('sm_tg_latency'))}: `{latency_str}`\n\n"
+        # --- 💡 إضافة قسم صحة الخادم إلى الرسالة 💡 ---
+        f"**{(await db.get_text('sm_server_health'))}:**\n"
+        f"  - {(await db.get_text('sm_cpu_usage'))}: `{cpu_usage}%`\n"
+        f"  - {(await db.get_text('sm_ram_usage'))}: `{ram_usage_percent}% ({ram_usage_mb:.1f} MB)`\n\n"
         f"**{(await db.get_text('sm_deploy_info'))}:**\n"
         f"  - {(await db.get_text('sm_last_update'))}: `{last_update_str}`"
     )
