@@ -26,6 +26,7 @@ class DatabaseManager:
             
             self.db = self.client.get_database("IslamicBotDBAiogram")
             
+            # Define all collections
             self.users_collection = self.db.users
             self.texts_collection = self.db.texts
             self.reminders_collection = self.db.reminders
@@ -61,6 +62,7 @@ class DatabaseManager:
             "sch_ask_for_message": "📝 أرسل المنشور للجدولة.", "sch_ask_for_channels": "📡 اختر القنوات.", "sch_all_channels_button": "📢 كل القنوات", "sch_ask_for_datetime": "⏰ أرسل تاريخ ووقت النشر `YYYY-MM-DD HH:MM`.", "sch_invalid_datetime": "❌ صيغة التاريخ خاطئة.", "sch_datetime_in_past": "❌ لا يمكن الجدولة في الماضي.", "sch_add_success": "✅ تم جدولة المنشور.", "sch_no_jobs": "لا توجد منشورات مجدولة.", "sch_deleted_success": "🗑️ تم الحذف.",
             "user_message_received": "✅ تم استلام رسالتك بنجاح، سيتم الرد عليك قريباً.",
             "af_menu_title": "⏱️ *إعدادات منع التكرار*","af_status_button": "🚦 حالة البروتوكول", "af_enabled": "🟢 مفعل", "af_disabled": "🔴 معطل", "af_edit_threshold_button": "⚡️ تعديل عتبة الإزعاج", "af_edit_mute_duration_button": "⏳ تعديل مدة التقييد", "af_ask_for_new_value": "✍️ أرسل القيمة الجديدة.", "af_updated_success": "✅ تم تحديث الإعداد.", "af_mute_notification": "🔇 *تم تقييدك مؤقتاً.*\nبسبب إرسال رسائل سريعة، تم منعك من الإرسال لمدة {duration} دقيقة.", "af_ban_notification": "🚫 *لقد تم حظرك نهائياً.*\nبسبب تكرار السلوك المزعج، تم منعك من استخدام البوت.",
+            "stats_title": "📊 *إحصائيات البوت*", "stats_total_users": "👤 المستخدمون", "stats_banned_users": "🚫 المحظورون", "stats_auto_replies": "📝 الردود", "stats_reminders": "⏰ التذكيرات", "stats_refresh_button": "🔄 تحديث",
         }
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
@@ -69,6 +71,7 @@ class DatabaseManager:
         await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$setOnInsert": {"enabled": True}}, upsert=True)
         await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$setOnInsert": {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}}, upsert=True)
 
+    # --- Cache and Text Management ---
     async def load_texts_into_cache(self):
         if not self.is_connected(): return
         logger.info("🚀 Caching all UI texts...")
@@ -171,7 +174,6 @@ class DatabaseManager:
         if not self.is_connected(): return
         await self.scheduled_posts_collection.update_one({"_id": job_id}, {"$set": {"status": "done"}})
     
-    # --- 💡 تم إضافة الدوال الناقصة هنا ---
     # --- Publishing Channels ---
     async def get_publishing_channels(self, page: int = 1, limit: int = 10):
         if not self.is_connected(): return []
@@ -195,8 +197,39 @@ class DatabaseManager:
             result = await self.publishing_channels_collection.delete_one({"_id": ObjectId(db_id)})
             return result.deleted_count > 0
         except Exception: return False
+    
+    # --- Statistics and Counts ---
+    async def get_users_count(self):
+        if not self.is_connected(): return 0
+        return await self.users_collection.count_documents({})
 
-    # --- Other Functions ---
+    async def get_auto_replies_count(self):
+        if not self.is_connected(): return 0
+        return await self.auto_replies_collection.count_documents({})
+
+    async def get_reminders_count(self):
+        if not self.is_connected(): return 0
+        return await self.reminders_collection.count_documents({})
+
+    async def get_bot_statistics(self) -> dict:
+        if not self.is_connected(): 
+            return {"total_users": 0, "banned_users": 0, "auto_replies": 0, "reminders": 0}
+        
+        tasks = [
+            self.get_users_count(),
+            self.get_banned_users_count(),
+            self.get_auto_replies_count(),
+            self.get_reminders_count()
+        ]
+        results = await asyncio.gather(*tasks)
+        return {
+            "total_users": results[0], 
+            "banned_users": results[1], 
+            "auto_replies": results[2], 
+            "reminders": results[3]
+        }
+    
+    # --- General Helper Functions ---
     async def get_security_settings(self):
         if not self.is_connected(): return {}
         doc = await self.settings_collection.find_one({"_id": "security_settings"})
@@ -244,5 +277,50 @@ class DatabaseManager:
     async def set_auto_publication_message(self, message_data: dict):
         if not self.is_connected(): return
         await self.settings_collection.update_one({"_id": "auto_publication_message"}, {"$set": {"message": message_data}}, upsert=True)
+        
+    async def get_all_editable_texts(self):
+        if not self.is_connected(): return []
+        cursor = self.texts_collection.find({}, {"_id": 1})
+        docs = await cursor.sort("_id", 1).to_list(length=None)
+        return [doc['_id'] for doc in docs]
+
+    async def add_auto_reply(self, keyword: str, message: dict):
+        if not self.is_connected(): return
+        keyword_lower = keyword.lower()
+        doc = {"keyword": keyword, "keyword_lower": keyword_lower, "message": message}
+        await self.auto_replies_collection.update_one({"keyword_lower": keyword_lower}, {"$set": doc}, upsert=True)
+
+    async def get_auto_replies(self, page: int = 1, limit: int = 10):
+        if not self.is_connected(): return []
+        return await self.auto_replies_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
+
+    async def delete_auto_reply(self, reply_id: str):
+        if not self.is_connected(): return False
+        try:
+            result = await self.auto_replies_collection.delete_one({"_id": ObjectId(reply_id)})
+            return result.deleted_count > 0
+        except Exception: return False
+        
+    async def add_reminder(self, text: str):
+        if not self.is_connected(): return
+        await self.reminders_collection.insert_one({"text": text})
+
+    async def get_reminders(self, page: int = 1, limit: int = 10):
+        if not self.is_connected(): return []
+        return await self.reminders_collection.find().skip((page - 1) * limit).limit(limit).to_list(length=limit)
+
+    async def delete_reminder(self, reminder_id: str):
+        if not self.is_connected(): return False
+        try:
+            result = await self.reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
+            return result.deleted_count > 0
+        except Exception: return False
+
+    async def get_random_reminder(self) -> str:
+        if not self.is_connected(): return "لا توجد أذكار حالياً."
+        pipeline = [{"$sample": {"size": 1}}]
+        async for doc in self.reminders_collection.aggregate(pipeline): 
+            return doc.get("text", "لا توجد أذكار حالياً.")
+        return "لا توجد أذكار حالياً."
 
 db = DatabaseManager()
