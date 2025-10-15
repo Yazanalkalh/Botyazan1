@@ -58,8 +58,11 @@ async def edit_setting_start(call: types.CallbackQuery, state: FSMContext):
     await EditAntiFlood.waiting_for_value.set()
     await call.answer()
 
+# --- 💡 تم إصلاح هذه الدالة بالكامل 💡 ---
 async def new_value_received(message: types.Message, state: FSMContext):
-    """Receives and saves the new setting value."""
+    """
+    Receives and saves the new setting value, then displays the updated menu as a new message.
+    """
     if not message.text.isdigit():
         await message.answer("الرجاء إرسال رقم صحيح فقط.")
         return
@@ -68,15 +71,34 @@ async def new_value_received(message: types.Message, state: FSMContext):
     setting_key = data['setting_key']
     new_value = int(message.text)
     
+    # Save the new setting to the database
     await db.update_antiflood_setting(setting_key, new_value)
     await state.finish()
     
-    text = await db.get_text("af_updated_success")
-    # Redirect back to the anti-flood menu
-    temp_call = types.CallbackQuery(id="temp", from_user=message.from_user, chat=message.chat, message=message)
-    await show_antiflood_menu(temp_call, state)
-    await message.answer(text)
-
+    # Send a confirmation message to the admin
+    success_text = await db.get_text("af_updated_success")
+    await message.answer(success_text)
+    
+    # THE FIX: Display the main menu as a completely new message
+    # We need to build the keyboard and text again here
+    settings = await db.get_antiflood_settings()
+    is_enabled = settings.get("enabled", True)
+    status_text = await db.get_text("af_enabled") if is_enabled else await db.get_text("af_disabled")
+    
+    menu_text = await db.get_text("af_menu_title")
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        types.InlineKeyboardButton(
+            text=f'{(await db.get_text("af_status_button"))}: {status_text}',
+            callback_data="af:toggle_status"
+        ),
+        types.InlineKeyboardButton(text=await db.get_text("af_edit_threshold_button"), callback_data="af:edit:rate_limit"),
+        types.InlineKeyboardButton(text=await db.get_text("af_edit_mute_duration_button"), callback_data="af:edit:mute_duration"),
+        types.InlineKeyboardButton(text=await db.get_text("ar_back_button"), callback_data="admin:security")
+    )
+    
+    # Send the updated menu in a separate message
+    await message.answer(menu_text, reply_markup=keyboard, parse_mode="Markdown")
 
 # --- Registration Function ---
 def register_antiflood_handlers(dp: Dispatcher):
