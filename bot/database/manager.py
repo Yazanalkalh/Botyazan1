@@ -1,15 +1,38 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import asyncio
+import os
+from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from bson.objectid import ObjectId
-from datetime import datetime, timedelta
-import asyncio
+from bson.errors import InvalidId
 
 from bot.core.cache import TEXTS_CACHE
 
 logger = logging.getLogger(__name__)
+
+# --- BEST PRACTICE: Use constants for collection names and setting keys to avoid typos ---
+# Collections
+COLLECTION_USERS = "users"
+COLLECTION_TEXTS = "texts"
+COLLECTION_REMINDERS = "reminders"
+COLLECTION_SETTINGS = "settings"
+COLLECTION_SUBSCRIPTION_CHANNELS = "subscription_channels"
+COLLECTION_MESSAGE_LINKS = "message_links"
+COLLECTION_AUTO_REPLIES = "auto_replies"
+COLLECTION_PUBLISHING_CHANNELS = "publishing_channels"
+COLLECTION_BANNED_USERS = "banned_users"
+COLLECTION_LIBRARY = "library"
+COLLECTION_SCHEDULED_POSTS = "scheduled_posts"
+COLLECTION_ANTIFLOOD_VIOLATIONS = "antiflood_violations"
+# Settings Keys
+SETTING_SECURITY = "security_settings"
+SETTING_FORCE_SUBSCRIBE = "force_subscribe"
+SETTING_ANTIFLOOD = "antiflood_settings"
+SETTING_TIMEZONE = "timezone"
+SETTING_AUTO_PUBLICATION_MESSAGE = "auto_publication_message"
 
 class DatabaseManager:
     def __init__(self):
@@ -24,21 +47,29 @@ class DatabaseManager:
         try:
             self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
             await self.client.admin.command("ping")
-            self.db = self.client.get_database("IslamicBotDBAiogram")
             
-            self.users_collection = self.db.users
-            self.texts_collection = self.db.texts
-            self.reminders_collection = self.db.reminders
-            self.settings_collection = self.db.settings
-            self.subscription_channels_collection = self.db.subscription_channels
-            self.forwarding_map_collection = self.db.message_links
-            self.auto_replies_collection = self.db.auto_replies
-            self.publishing_channels_collection = self.db.publishing_channels
-            self.banned_users_collection = self.db.banned_users
-            self.library_collection = self.db.library
-            self.scheduled_posts_collection = self.db.scheduled_posts
-            self.antiflood_violations_collection = self.db.antiflood_violations
+            # FLEXIBILITY: Read database name from environment variable, with a fallback
+            db_name = os.getenv("DATABASE_NAME", "IslamicBotDBAiogram")
+            self.db = self.client.get_database(db_name)
             
+            # BEST PRACTICE: Using constants for collection names
+            self.users_collection = self.db[COLLECTION_USERS]
+            self.texts_collection = self.db[COLLECTION_TEXTS]
+            self.reminders_collection = self.db[COLLECTION_REMINDERS]
+            self.settings_collection = self.db[COLLECTION_SETTINGS]
+            self.subscription_channels_collection = self.db[COLLECTION_SUBSCRIPTION_CHANNELS]
+            self.forwarding_map_collection = self.db[COLLECTION_MESSAGE_LINKS]
+            self.auto_replies_collection = self.db[COLLECTION_AUTO_REPLIES]
+            self.publishing_channels_collection = self.db[COLLECTION_PUBLISHING_CHANNELS]
+            self.banned_users_collection = self.db[COLLECTION_BANNED_USERS]
+            self.library_collection = self.db[COLLECTION_LIBRARY]
+            self.scheduled_posts_collection = self.db[COLLECTION_SCHEDULED_POSTS]
+            self.antiflood_violations_collection = self.db[COLLECTION_ANTIFLOOD_VIOLATIONS]
+            
+            # PERFORMANCE: Create indexes on frequently queried fields to speed up searches
+            await self.auto_replies_collection.create_index("keyword_lower", unique=True)
+            await self.antiflood_violations_collection.create_index("user_id")
+
             await self.initialize_defaults()
             await self.load_all_caches()
 
@@ -71,17 +102,17 @@ class DatabaseManager:
         for key, value in defaults.items():
             await self.texts_collection.update_one({"_id": key}, {"$setOnInsert": {"text": value}}, upsert=True)
         
-        await self.settings_collection.update_one({"_id": "security_settings"}, {"$setOnInsert": {"bot_status": "active", "blocked_media": {}}}, upsert=True)
-        await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$setOnInsert": {"enabled": True}}, upsert=True)
-        await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$setOnInsert": {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}}, upsert=True)
-        await self.settings_collection.update_one({"_id": "timezone"}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
+        await self.settings_collection.update_one({"_id": SETTING_SECURITY}, {"$setOnInsert": {"bot_status": "active", "blocked_media": {}}}, upsert=True)
+        await self.settings_collection.update_one({"_id": SETTING_FORCE_SUBSCRIBE}, {"$setOnInsert": {"enabled": True}}, upsert=True)
+        await self.settings_collection.update_one({"_id": SETTING_ANTIFLOOD}, {"$setOnInsert": {"enabled": True, "rate_limit": 7, "time_window": 2, "mute_duration": 30}}, upsert=True)
+        await self.settings_collection.update_one({"_id": SETTING_TIMEZONE}, {"$setOnInsert": {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}}, upsert=True)
 
     async def load_all_caches(self):
         if not self.is_connected(): return
         logger.info("🚀 Caching all UI texts and settings...")
         cursor = self.texts_collection.find({}, {"_id": 1, "text": 1})
         async for doc in cursor: TEXTS_CACHE[doc['_id']] = doc.get('text', f"[{doc['_id']}]")
-        settings_keys = ["security_settings", "force_subscribe", "antiflood_settings", "timezone"]
+        settings_keys = [SETTING_SECURITY, SETTING_FORCE_SUBSCRIBE, SETTING_ANTIFLOOD, SETTING_TIMEZONE]
         settings_cursor = self.settings_collection.find({"_id": {"$in": settings_keys}})
         async for doc in settings_cursor: self.settings_cache[doc['_id']] = doc
         channels_cursor = self.subscription_channels_collection.find({}, {"_id": 0, "username": 1})
@@ -100,64 +131,68 @@ class DatabaseManager:
         if not self.is_connected(): return False
         user_data = {'first_name': user.first_name or "", 'last_name': getattr(user, 'last_name', "") or "", 'username': user.username or ""}
         result = await self.users_collection.update_one({'_id': user.id}, {'$set': user_data}, upsert=True)
-        return result.upserted_id is not None
+        # IMPROVEMENT: Return 'acknowledged' for a more accurate success status (True for both insert and update)
+        return result.acknowledged
     
-    async def get_antiflood_settings(self) -> dict: return self.settings_cache.get("antiflood_settings", {})
+    async def get_antiflood_settings(self) -> dict: return self.settings_cache.get(SETTING_ANTIFLOOD, {})
     
     async def update_antiflood_setting(self, key: str, value):
         if not self.is_connected(): return
         valid_keys = ["enabled", "rate_limit", "time_window", "mute_duration"]
         if key not in valid_keys: return
-        await self.settings_collection.update_one({"_id": "antiflood_settings"}, {"$set": {key: value}}, upsert=True)
-        if "antiflood_settings" not in self.settings_cache: self.settings_cache["antiflood_settings"] = {}
-        self.settings_cache["antiflood_settings"][key] = value
+        await self.settings_collection.update_one({"_id": SETTING_ANTIFLOOD}, {"$set": {key: value}}, upsert=True)
+        if SETTING_ANTIFLOOD not in self.settings_cache: self.settings_cache[SETTING_ANTIFLOOD] = {}
+        self.settings_cache[SETTING_ANTIFLOOD][key] = value
 
-    async def get_security_settings(self) -> dict: return self.settings_cache.get("security_settings", {})
+    async def get_security_settings(self) -> dict: return self.settings_cache.get(SETTING_SECURITY, {})
 
     async def toggle_bot_status(self):
         if not self.is_connected(): return
-        current_settings = self.get_security_settings()
+        # FIX: Added 'await' to correctly call the async function.
+        current_settings = await self.get_security_settings()
         new_status = "inactive" if current_settings.get("bot_status", "active") == "active" else "active"
-        await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {"bot_status": new_status}}, upsert=True)
-        if "security_settings" not in self.settings_cache: self.settings_cache["security_settings"] = {}
-        self.settings_cache["security_settings"]["bot_status"] = new_status
+        await self.settings_collection.update_one({"_id": SETTING_SECURITY}, {"$set": {"bot_status": new_status}}, upsert=True)
+        if SETTING_SECURITY not in self.settings_cache: self.settings_cache[SETTING_SECURITY] = {}
+        self.settings_cache[SETTING_SECURITY]["bot_status"] = new_status
         return new_status
         
     async def toggle_media_blocking(self, media_type: str):
         if not self.is_connected(): return
         valid_keys = ["photo", "video", "link", "sticker", "document", "audio", "voice"]
         if media_type not in valid_keys: return None
-        current_settings = self.get_security_settings()
+        # FIX: Added 'await' to correctly call the async function.
+        current_settings = await self.get_security_settings()
         current_blocked_media = current_settings.get("blocked_media", {})
         new_blocked_status = not current_blocked_media.get(media_type, False)
-        await self.settings_collection.update_one({"_id": "security_settings"}, {"$set": {f"blocked_media.{media_type}": new_blocked_status}}, upsert=True)
-        if "security_settings" not in self.settings_cache: self.settings_cache["security_settings"] = {"blocked_media": {}}
-        self.settings_cache["security_settings"]["blocked_media"][media_type] = new_blocked_status
+        await self.settings_collection.update_one({"_id": SETTING_SECURITY}, {"$set": {f"blocked_media.{media_type}": new_blocked_status}}, upsert=True)
+        if SETTING_SECURITY not in self.settings_cache: self.settings_cache[SETTING_SECURITY] = {"blocked_media": {}}
+        self.settings_cache[SETTING_SECURITY]["blocked_media"][media_type] = new_blocked_status
         return new_blocked_status
         
     async def get_subscription_channels(self) -> list[str]: return self.settings_cache.get("subscription_channels", [])
         
     async def get_force_subscribe_status(self) -> bool:
-        force_subscribe_settings = self.settings_cache.get("force_subscribe", {})
+        force_subscribe_settings = self.settings_cache.get(SETTING_FORCE_SUBSCRIBE, {})
         return force_subscribe_settings.get("enabled", True)
         
     async def toggle_force_subscribe_status(self):
         if not self.is_connected(): return
-        current_status = self.get_force_subscribe_status()
+        # FIX: Added 'await' to correctly call the async function.
+        current_status = await self.get_force_subscribe_status()
         new_status = not current_status
-        await self.settings_collection.update_one({"_id": "force_subscribe"}, {"$set": {"enabled": new_status}}, upsert=True)
-        if "force_subscribe" not in self.settings_cache: self.settings_cache["force_subscribe"] = {}
-        self.settings_cache["force_subscribe"]["enabled"] = new_status
+        await self.settings_collection.update_one({"_id": SETTING_FORCE_SUBSCRIBE}, {"$set": {"enabled": new_status}}, upsert=True)
+        if SETTING_FORCE_SUBSCRIBE not in self.settings_cache: self.settings_cache[SETTING_FORCE_SUBSCRIBE] = {}
+        self.settings_cache[SETTING_FORCE_SUBSCRIBE]["enabled"] = new_status
         return new_status
 
     async def get_timezone(self) -> dict:
         default = {"identifier": "Asia/Riyadh", "display_name": "بتوقيت الرياض"}
-        return self.settings_cache.get("timezone", default)
+        return self.settings_cache.get(SETTING_TIMEZONE, default)
 
     async def set_timezone(self, identifier: str, display_name: str):
         if not self.is_connected(): return
-        await self.settings_collection.update_one({"_id": "timezone"}, {"$set": {"identifier": identifier, "display_name": display_name}}, upsert=True)
-        self.settings_cache["timezone"] = {"identifier": identifier, "display_name": display_name}
+        await self.settings_collection.update_one({"_id": SETTING_TIMEZONE}, {"$set": {"identifier": identifier, "display_name": display_name}}, upsert=True)
+        self.settings_cache[SETTING_TIMEZONE] = {"identifier": identifier, "display_name": display_name}
         
     async def add_subscription_channel(self, channel_id: int, channel_title: str, username: str):
         if not self.is_connected(): return
@@ -171,7 +206,12 @@ class DatabaseManager:
             if result.deleted_count > 0:
                 await self._reload_subscription_channels_cache()
             return result.deleted_count > 0
-        except Exception: return False
+        except InvalidId:
+            logger.warning(f"Attempted to delete subscription channel with invalid ObjectId: {db_id}")
+            return False
+        except Exception as e: 
+            logger.error(f"Error deleting subscription channel {db_id}: {e}")
+            return False
         
     async def _reload_subscription_channels_cache(self):
         if not self.is_connected(): return
@@ -285,7 +325,12 @@ class DatabaseManager:
         try:
             result = await self.publishing_channels_collection.delete_one({"_id": ObjectId(db_id)})
             return result.deleted_count > 0
-        except Exception: return False
+        except InvalidId:
+            logger.warning(f"Attempted to delete publishing channel with invalid ObjectId: {db_id}")
+            return False
+        except Exception as e: 
+            logger.error(f"Error deleting publishing channel {db_id}: {e}")
+            return False
     
     async def get_users_count(self):
         if not self.is_connected(): return 0
@@ -335,16 +380,16 @@ class DatabaseManager:
 
     async def get_auto_publication_message(self):
         if not self.is_connected(): return None
-        doc = await self.settings_collection.find_one({"_id": "auto_publication_message"})
+        doc = await self.settings_collection.find_one({"_id": SETTING_AUTO_PUBLICATION_MESSAGE})
         return doc.get("message") if doc else None
 
     async def set_auto_publication_message(self, message_data: dict):
         if not self.is_connected(): return
-        await self.settings_collection.update_one({"_id": "auto_publication_message"}, {"$set": {"message": message_data}}, upsert=True)
+        await self.settings_collection.update_one({"_id": SETTING_AUTO_PUBLICATION_MESSAGE}, {"$set": {"message": message_data}}, upsert=True)
         
     async def delete_auto_publication_message(self):
         if not self.is_connected(): return False
-        result = await self.settings_collection.delete_one({"_id": "auto_publication_message"})
+        result = await self.settings_collection.delete_one({"_id": SETTING_AUTO_PUBLICATION_MESSAGE})
         return result.deleted_count > 0
         
     async def get_all_editable_texts(self):
@@ -368,7 +413,12 @@ class DatabaseManager:
         try:
             result = await self.auto_replies_collection.delete_one({"_id": ObjectId(reply_id)})
             return result.deleted_count > 0
-        except Exception: return False
+        except InvalidId:
+            logger.warning(f"Attempted to delete auto reply with invalid ObjectId: {reply_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting auto reply {reply_id}: {e}")
+            return False
         
     async def add_reminder(self, text: str):
         if not self.is_connected(): return
@@ -383,12 +433,19 @@ class DatabaseManager:
         try:
             result = await self.reminders_collection.delete_one({"_id": ObjectId(reminder_id)})
             return result.deleted_count > 0
-        except Exception: return False
+        except InvalidId:
+            logger.warning(f"Attempted to delete reminder with invalid ObjectId: {reminder_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting reminder {reminder_id}: {e}")
+            return False
 
     async def get_random_reminder(self) -> str:
         if not self.is_connected(): return "لا توجد أذكار حالياً."
         pipeline = [{"$sample": {"size": 1}}]
-        async for doc in self.reminders_collection.aggregate(pipeline): return doc.get("text", "لا توجد أذكار حالياً.")
+        # Use a loop to safely get the first document from the aggregate cursor
+        async for doc in self.reminders_collection.aggregate(pipeline):
+            return doc.get("text", "لا توجد أذكار حالياً.")
         return "لا توجد أذكار حالياً."
         
     async def get_all_subscription_channels_docs(self):
@@ -412,7 +469,12 @@ class DatabaseManager:
         try:
             result = await self.library_collection.delete_one({"_id": ObjectId(item_id)})
             return result.deleted_count > 0
-        except Exception: return False
+        except InvalidId:
+            logger.warning(f"Attempted to delete library item with invalid ObjectId: {item_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting library item {item_id}: {e}")
+            return False
 
     async def ping_database(self) -> bool:
         if not self.client: return False
@@ -428,7 +490,8 @@ class DatabaseManager:
         
         try:
             stats = await self.db.command("dbStats")
-            total_size_mb = 512.0
+            # FLEXIBILITY: Reading total size from an env var, default to 512 (for free tier)
+            total_size_mb = float(os.getenv("MONGO_DB_TOTAL_SIZE_MB", 512.0))
             data_size_bytes = stats.get('dataSize', 0)
             used_mb = data_size_bytes / (1024 * 1024)
             remaining_mb = total_size_mb - used_mb
@@ -441,6 +504,7 @@ class DatabaseManager:
             logger.error(f"An unexpected error occurred while getting DB stats: {e}")
             return default_stats
 
+    # --- Convenience methods to directly access collections (optional) ---
     def users(self): return self.users_collection
     def texts(self): return self.texts_collection
     def reminders(self): return self.reminders_collection
