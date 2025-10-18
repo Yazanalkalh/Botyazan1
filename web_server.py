@@ -1,20 +1,18 @@
-# -*- coding: utf-8 -*-
-
 import os
 from flask import Flask
+from threading import Thread
 
-# --- إعداد خادم الويب Flask ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    """صفحة بسيطة لإبقاء الخدمة نشطة."""
-    return "Bot server is running and healthy."
+    return "Bot is alive and running!"
 
-def run_flask():
-    """
-    تشغيل خادم فلاسك.
-    Render توفر متغير PORT تلقائياً. القيمة 8080 هي للاختبار المحلي.
-    """
-    port = int(os.environ.get('PORT', 8080))
+def run_web_server():
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+
+def start_web_server_thread():
+    web_thread = Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
