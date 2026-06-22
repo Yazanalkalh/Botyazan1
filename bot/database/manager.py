@@ -45,7 +45,7 @@ class DatabaseManager:
 
     async def connect_to_database(self, uri: str):
         try:
-            self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=30000 , connect=False)
+            self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=30000 , connect=False , tlsAllowInvalidCertificates=True)
             await self.client.admin.command("ping")
             
             # FLEXIBILITY: Read database name from environment variable, with a fallback
